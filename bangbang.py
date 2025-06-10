@@ -85,7 +85,7 @@ class Config:
     
     def __init__(self):
         # Directory Configuration
-        self.SOURCE_DIR = Path("C:/temp")          # Replace with your media download directory
+        self.SOURCE_DIR = Path("C:/download/unsorted")          # Replace with your media download directory
         self.MOVIES_DIR = Path("B:/Movies")        # Replace with your Movies directory
         self.TV_SHOWS_DIR = Path("B:/Series")      # Replace with your TV Shows directory
         self.ANIME_MOVIES_DIR = Path("B:/Anime_Movies") # Replace with your Anime Movies directory
