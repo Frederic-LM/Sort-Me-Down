@@ -14,12 +14,12 @@ Features:
 - Intergrated watchdog
 - Dual Api logic for better detection
 
-python media_sorter.py                # One-time sorting (original behavior)
-python media_sorter.py --dry-run      # Preview mode
-python media_sorter.py --version      # Show version
-python media_sorter.py --watch                          # Standard watch mode (15 minute intervals)
-python media_sorter.py --watch --watch-interval 30      # Custom interval (30 minutes)
-python media_sorter.py --watch --dry-run                # Watch mode with dry-run (perfect for testing)
+python bangbang.py                # One-time sorting (original behavior)
+python bangbang.py --dry-run      # Preview mode
+python bangbang.py --version      # Show version
+python bangbang.py --watch                          # Standard watch mode (15 minute intervals)
+python bangbang.py --watch --watch-interval 30      # Custom interval (30 minutes)
+python bangbang.py --watch --dry-run                # Watch mode with dry-run (perfect for testing)
 
 
 Version: 2.6i
