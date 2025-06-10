@@ -88,7 +88,7 @@ class Config:
         self.SOURCE_DIR = Path("C:/temp")          # Replace with your media download directory
         self.MOVIES_DIR = Path("B:/Movies")        # Replace with your Movies directory
         self.TV_SHOWS_DIR = Path("B:/Series")      # Replace with your TV Shows directory
-        self.ANIME_MOVIES_DIR = Path("B:/Anime_Movies) # Replace with your Anime Movies directory
+        self.ANIME_MOVIES_DIR = Path("B:/Anime_Movies") # Replace with your Anime Movies directory
         self.ANIME_SERIES_DIR = Path("B:/Anime_TV")# Replace with your Anime Series directory
         
         # API Configuration
