@@ -1,4 +1,4 @@
-SortmeDown Media Sorter Script
+SortMeDown Media Sorter Script
 ==================
 
 Automatically sorts media files (movies, TV shows, anime) into organized directories
