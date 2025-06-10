@@ -1,4 +1,4 @@
-SortMeDown Media Sorter Script
+SortMeDown Media Sorter Script Version: 2.6i
 ==================
 
 Automatically sorts media files (movies, TV shows, anime) into organized directories
@@ -24,4 +24,15 @@ Arguments:
 - python bangbang.py --watch --dry-run                # Watch mode with dry-run (perfect for testing)
 
 
-Version: 2.6i
+
+
+Usage:
+1) Register your free API Key from http://www.omdbapi.com/
+2) Edit bangbang.py with youe API Key 
+3) Edit bangbang.py with the path to your source folder (your download folder for exemple
+4) Edit bangbang.py with the paths to your medias movies, TV shows, anime, anime series
+5) Rdit the path for the log
+6) Run the script using the desired argument
+
+Optional:
+Have you system runing it at log in  either with the wath dog , or as a sheduled one time (default behavior)
