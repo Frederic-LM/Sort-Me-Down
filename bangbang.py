@@ -93,7 +93,7 @@ class Config:
     """Configuration class to hold all directory paths and API settings."""
     
     def __init__(self):
-        # Directory Configuration
+        # Directory Configuration ⚠️ windows users please  use /  not \ in your paths
         self.SOURCE_DIR = Path("C:/download/unsorted")           # Replace with your media download directory
         self.MOVIES_DIR = Path("D:/Movies")                      # Replace with your Movies directory
         self.FRENCH_MOVIES_DIR = Path("D:/Films")                # Replace with your Movies directory =>> only needed if you intend the --f argument
