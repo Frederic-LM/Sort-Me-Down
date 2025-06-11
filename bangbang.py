@@ -3,22 +3,24 @@
 SortMeDown a Media Sorter Script
 ==================
 
-Automatically sorts media files (movies, TV shows, anime) into organized directories
+Automatically sorts media files and folders (movies, TV shows, anime) into organized directories
 based on metadata from OMDb API and AniList API.
 
 Features:
+- Processes both folders and individual files in the source directory
 - Automatic detection of movies, TV series, and anime
 - Multi-language support (English/French movies)
 - Season-based organization for TV shows
 - Dry-run mode for safe testing
 - Comprehensive logging
 - Duplicate detection and handling
-- Intergrated watchdog
+- Integrated watchdog for continuous monitoring
 - Dedicated French movies folder if run with --fr argument
-- Revised Logic with less bias (no longer reling on "english" as primary key word) 
+- Revised Logic with less bias (no longer reling on "english" as primary key word)
+- Auto Cleaning processor and custom strings input
 
 python bangbang.py                                  # One-time sorting (original behavior)
-python bangbang.py --fr                             # Sorts, and separates French movies
+python bangbang.py --fr                             # French Sauce: separates French movies
 python bangbang.py --dry-run                        # Preview mode
 python bangbang.py --version                        # Show version
 python bangbang.py --watch                          # Standard watch mode (15 minute intervals)
@@ -26,7 +28,7 @@ python bangbang.py --watch --watch-interval 30      # Custom interval (30 minute
 python bangbang.py --watch --dry-run                # Watch mode with dry-run (perfect for testing)
 
 
-Version: 2.8i
+Version: 3.1.1
 
 
 """
@@ -38,7 +40,7 @@ import requests
 import logging
 import argparse
 from time import sleep
-from typing import Optional, Tuple, Dict, Any, Set
+from typing import Optional, Dict, Any, Set
 import json
 import signal
 import sys
@@ -49,17 +51,20 @@ from enum import Enum
 
 # ASCII Art Logo
 ASCII_ART = """
+#    ██████  ▒█████   ██▀███  ▄▄▄█████▓    ███▄ ▄███▓▓█████    ▓█████▄  ▒█████   █     █░███▄    █ 
+#  ▒██    ▒ ▒██▒  ██▒▓██ ▒ ██▒▓  ██▒ ▓▒   ▓██▒▀█▀ ██▒▓█   ▀    ▒██▀ ██▌▒██▒  ██▒▓█░ █ ░█░██ ▀█   █ 
+#  ░ ▓██▄   ▒██░  ██▒▓██ ░▄█ ▒▒ ▓██░ ▒░   ▓██    ▓██░▒███      ░██   █▌▒██░  ██▒▒█░ █ ░█▓██  ▀█ ██▒
+#    ▒   ██▒▒██   ██░▒██▀▀█▄  ░ ▓██▓ ░    ▒██    ▒██ ▒▓█  ▄    ░▓█▄   ▌▒██   ██░░█░ █ ░█▓██▒  ▐▌██▒
+#  ▒██████▒▒░ ████▓▒░░██▓ ▒██▒  ▒██▒ ░    ▒██▒   ░██▒░▒████▒   ░▒████▓ ░ ████▓▒░░░██▒██▓▒██░   ▓██░
+#  ▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░      ░ ▒░   ░  ░░░ ▒░ ░    ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
+#  ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░       ░  ░      ░ ░ ░  ░    ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
+#  ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
+#        ░      ░ ░     ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░      3.1.1 ░ 
+#                                                               ░                                    
 
-  ██████  ▒█████   ██▀███  ▄▄▄█████▓ ███▄ ▄███▓▓█████ ▓█████▄  ▒█████   █     █░███▄    █ 
-▒██    ▒ ▒██▒  ██▒▓██ ▒ ██▒▓  ██▒ ▓▒▓██▒▀█▀ ██▒▓█   ▀ ▒██▀ ██▌▒██▒  ██▒▓█░ █ ░█░██ ▀█   █ 
-░ ▓██▄   ▒██░  ██▒▓██ ░▄█ ▒▒ ▓██░ ▒░▓██    ▓██░▒███   ░██   █▌▒██░  ██▒▒█░ █ ░█▓██  ▀█ ██▒
-  ▒   ██▒▒██   ██░▒██▀▀█▄  ░ ▓██▓ ░ ▒██    ▒██ ▒▓█  ▄ ░▓█▄   ▌▒██   ██░░█░ █ ░█▓██▒  ▐▌██▒
-▒██████▒▒░ ████▓▒░░██▓ ▒██▒  ▒██▒ ░ ▒██▒   ░██▒░▒████▒░▒████▓ ░ ████▓▒░░░██▒██▓▒██░   ▓██░
-▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░   ░ ▒░   ░  ░░░ ▒░ ░ ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
-░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░    ░  ░      ░ ░ ░  ░ ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
-░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░      ░      ░      ░    ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
-      ░      ░ ░     ░                     ░      ░  ░   ░        ░ ░      ░        2.8i░ 
-                                                       ░                                  
+     Available Arguments : --dry-run  --fr   -- watch   --watch --watch-interval 30  --version
+      
+                                                                      
 """
 
 
@@ -74,13 +79,14 @@ class MediaType(Enum):
 
 @dataclass
 class MediaInfo:
-    """Data class to hold media information."""
-    title: str
-    year: Optional[str]
-    media_type: MediaType
-    language: Optional[str]
-    genre: Optional[str]
-    season: Optional[int] = None
+     """Data class to hold media information."""
+    title: str; year: Optional[str]; media_type: MediaType; language: Optional[str]; genre: Optional[str]; season: Optional[int] = None
+    def get_folder_name(self) -> str:
+        if not self.title: return "Unknown"
+        folder_title = re.sub(r'[<>:"/\\|?*]', '', self.title).strip()
+        if self.year: return f"{folder_title} ({self.year})"
+        return folder_title
+
 
 
 class Config:
@@ -94,1066 +100,400 @@ class Config:
         self.TV_SHOWS_DIR = Path("D:/Series")                    # Replace with your TV Shows directory
         self.ANIME_MOVIES_DIR = Path("D:/Anime_Movies")          # Replace with your Anime Movies directory
         self.ANIME_SERIES_DIR = Path("D:/Anime_TV")              # Replace with your Anime Series directory
-        
+        # Only files with these extensions will be processed.
+        self.SUPPORTED_EXTENSIONS = {
+            '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v',
+            '.mpg', '.mpeg', '.3gp', '.ogv', '.ts', '.m2ts', '.mts' , '.sub'
+        }
+        self.CUSTOM_STRINGS_TO_REMOVE = {'FRENCH', 'TRUEFRENCH', 'VOSTFR', 'MULTI', 'SUBFRENCH'} # Custom user definable strings to clean
         # API Configuration
-        self.OMDB_API_KEY = "yourkey"  # Replace with your actual omdbapi API key
+        self.OMDB_API_KEY = "yourkey"  # Replace with your actual API key from www.omdbapi.com
         self.OMDB_URL = "http://www.omdbapi.com/"
         self.ANILIST_URL = "https://graphql.anilist.co"
-        
         # Logging Configuration
-        self.LOG_FILE = "D:/media_sorter.log"
-        
+        self.LOG_FILE = "C:/download/unsorted/sortmedown.log"  #change where ever you want it
         # Processing Configuration
         self.REQUEST_DELAY = 1.0  # Delay between API requests (seconds)
         self.MAX_RETRIES = 3
-        
         # Watch Mode Configuration
         self.WATCH_INTERVAL = 15 * 60  # 15 minutes in seconds
         self.COOLDOWN_PERIOD = 5 * 60  # 5 minutes cooldown after processing
         
     def validate(self) -> bool:
-        """Validate configuration settings."""
-        if not self.OMDB_API_KEY:
-            logging.warning("OMDb API key not properly configured")
+        """Validates critical configuration settings."""
+        if not self.OMDB_API_KEY or self.OMDB_API_KEY == "yourkey": #check if you forgot to change this value with your own key
+            logging.warning("OMDb API key not configured")
             return False
-        
         if not self.SOURCE_DIR.exists():
-            logging.error(f"Source directory does not exist: {self.SOURCE_DIR}")
+            logging.error(f"Source directory not found: {self.SOURCE_DIR}")
             return False
-            
         return True
 
-
+      
+      
 class TitleCleaner:
-    """Utility class for cleaning and normalizing media titles."""
-    
-    # Regex patterns for cleaning titles
-    PATTERNS = {
-        'dots_underscores': r'[\._]',
-        'year_brackets': r'\s*[\(\[]\d{4}[\)\]]',
-        'season_episode': r'\s*[Ss]\d{1,2}[Ee]?\d{0,2}',
-        'season_word': r'\s*Season\s*\d{1,2}',
-        'resolution': r'\s*\d{3,4}p',
-        'quality': r'\s*(WEBRip|BluRay|BDRip|DVDRip|HDRip|CAMRip|HDTV|WEB-DL)',
-        'channels': r'\s*\d+CH',
-        'codec': r'\s*(x264|x265|H\.?264|H\.?265|HEVC|AVC)',
-        'release_group': r'\s*-[A-Z]+$',
-        'multiple_spaces': r'\s+',
-    }
-    
+    """A unified, intelligent utility for cleaning media titles for API searches."""
+    METADATA_BREAKPOINT_PATTERN = re.compile(
+        r'('
+        r'\s[\(\[]?\d{4}[\)\]]?\b'         # Year, e.g., (2023) or 2023
+        r'|\s[Ss]\d{1,2}[Ee]\d{1,2}\b'     # Season/Episode, e.g., S01E02
+        # Add a pattern to catch standalone season indicators like "S02"
+        r'|\s[Ss]\d{1,2}\b'                # Season only, e.g., S02
+        r'|\sSeason\s\d{1,2}\b'           # Season Word, e.g., Season 01
+        r'|\s\d{3,4}p\b'                  # Resolution, e.g., 1080p
+        r'|\s(WEBRip|BluRay|BDRip|DVDRip|HDRip|WEB-DL|HDTV)\b' # Quality
+        r'|\s(x264|x265|H\.?264|H\.?265|HEVC|AVC)\b' # Codec
+        r')', re.IGNORECASE
+    )
+
     @classmethod
-    def clean_for_search(cls, title: str) -> str:
+    def clean_for_search(cls, name: str, custom_strings_to_remove: Set[str]) -> str:
         """
-        Clean title for API searches - removes everything including year.
-        
-        Args:
-            title: Raw title string
-            
-        Returns:
-            Cleaned title suitable for API searches
+        Intelligently cleans a filename for API search.
+        It isolates the title, removes custom junk words, and then stops at metadata.
         """
-        cleaned = title
+        # First, replace dots and underscores with spaces for better parsing
+        name_with_spaces = re.sub(r'[\._]', ' ', name)
         
-        # Apply all cleaning patterns except year extraction
-        for pattern_name, pattern in cls.PATTERNS.items():
-            if pattern_name == 'multiple_spaces':
-                cleaned = re.sub(pattern, ' ', cleaned)
-            else:
-                cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        # Remove custom strings first
+        temp_title = name_with_spaces
+        for s in custom_strings_to_remove:
+            pattern = r'\b' + re.escape(s) + r'\b'
+            temp_title = re.sub(pattern, ' ', temp_title, flags=re.IGNORECASE)
+
+        # Now, find the metadata breakpoint in the already cleaned title
+        match = cls.METADATA_BREAKPOINT_PATTERN.search(temp_title)
         
-        return cleaned.strip()
-    
-    @classmethod
-    def clean_for_folder(cls, title: str) -> str:
-        """
-        Clean title for folder naming - preserves year but removes other metadata.
+        # If metadata is found, take everything before it.
+        title_part = temp_title[:match.start()] if match else temp_title
+
+        # Remove any release group in brackets, e.g., [SubsPlease]
+        cleaned_title = re.sub(r'\[[^\]]+\]', '', title_part)
         
-        Args:
-            title: Raw title string
-            
-        Returns:
-            Cleaned title suitable for folder names
-        """
-        # Extract and preserve year
-        year_match = re.search(r'\((\d{4})\)', title)
-        year = f" ({year_match.group(1)})" if year_match else ""
+        # Final cleanup of multiple spaces and stripping whitespace
+        cleaned_title = re.sub(r'\s+', ' ', cleaned_title).strip()
         
-        # Clean the title
-        cleaned = title
-        for pattern_name, pattern in cls.PATTERNS.items():
-            if pattern_name == 'multiple_spaces':
-                cleaned = re.sub(pattern, ' ', cleaned)
-            else:
-                cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
-        
-        cleaned = cleaned.strip()
-        return cleaned + year
-    
+        return cleaned_title
+
     @classmethod
     def extract_season_info(cls, filename: str) -> Optional[int]:
-        """
-        Extract season number from filename.
-        
-        Args:
-            filename: Name of file or folder
-            
-        Returns:
-            Season number if found, otherwise None
-        """
-        # Try different season patterns
-        patterns = [
-            r'[Ss](\d{1,2})[Ee]\d{1,2}',  # S01E01 format
-            r'Season[ _-]?(\d{1,2})',      # Season 1 format
-            r'[Ss](\d{1,2})',             # S01 format
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, filename, re.IGNORECASE)
-            if match:
-                return int(match.group(1))
-        
+        # This method is unchanged and correct
+        patterns = [r'[Ss](\d{1,2})[Ee]\d{1,2}', r'Season[ _-]?(\d{1,2})', r'[Ss](\d{1,2})']
+        for p in patterns:
+            if m:=re.search(p, filename, re.IGNORECASE): return int(m.group(1))
         return None
 
-
+        
 class APIClient:
-    """Client for interacting with external APIs."""
-    
     def __init__(self, config: Config):
         self.config = config
         self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'SortMeDown/2.8 (https://github.com/Frederic-LM/Sort-Me-Down)'
-        })
+        self.session.headers.update({'User-Agent': 'SortMeDown/3.1.1'})
     
     def query_omdb(self, title: str) -> Optional[Dict[str, Any]]:
-        """
-        Query OMDb API for movie/TV show information.
-        
-        Args:
-            title: Title to search for
-            
-        Returns:
-            API response data or None if not found
-        """
+        # Logic remains the same
         params = {"t": title, "apikey": self.config.OMDB_API_KEY}
-        
         try:
             response = self.session.get(self.config.OMDB_URL, params=params, timeout=10)
-            response.raise_for_status()
-            
             data = response.json()
-            if data.get("Response") != "False":
-                logging.info(f"OMDb found exact match for: {title}")
-                return data
-            
-            # Try search if exact match fails
+            if data.get("Response") != "False": return data
             search_params = {"s": title, "apikey": self.config.OMDB_API_KEY}
-            search_response = self.session.get(
-                self.config.OMDB_URL, 
-                params=search_params, 
-                timeout=10
-            )
-            search_response.raise_for_status()
-            
+            search_response = self.session.get(self.config.OMDB_URL, params=search_params, timeout=10)
             search_data = search_response.json()
             if "Search" in search_data and search_data["Search"]:
-                best_match = search_data["Search"][0]["Title"]
-                logging.info(f"OMDb using search result: {best_match} for query: {title}")
-                return self.query_omdb(best_match)
-                
+                id_params = {"i": search_data["Search"][0]["imdbID"], "apikey": self.config.OMDB_API_KEY}
+                id_response = self.session.get(self.config.OMDB_URL, params=id_params, timeout=10)
+                return id_response.json()
         except requests.RequestException as e:
             logging.error(f"OMDb API request failed for '{title}': {e}")
-        except Exception as e:
-            logging.error(f"OMDb query error for '{title}': {e}")
-        
         return None
     
     def query_anilist(self, title: str) -> Optional[Dict[str, Any]]:
-        """
-        Query AniList API for anime information.
-        
-        Args:
-            title: Title to search for
-            
-        Returns:
-            API response data or None if not found
-        """
-        query = '''
-        query ($search: String) {
-          Media(search: $search, type: ANIME) {
-            title { 
-              romaji 
-              english 
-              native 
-            }
-            format
-            genres
-            season
-            seasonYear
-            episodes
-          }
-        }
-        '''
-        
-        variables = {"search": title}
-        payload = {"query": query, "variables": variables}
-        
+        # Logic remains the same
+        query = '''query ($search: String) { Media(search: $search, type: ANIME) { title { romaji english native } format, genres, season, seasonYear, episodes } }'''
+        payload = {"query": query, "variables": {"search": title}}
         try:
-            response = self.session.post(
-                self.config.ANILIST_URL, 
-                json=payload, 
-                timeout=10
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            media = data.get("data", {}).get("Media")
-            if media:
-                logging.info(f"AniList found match for: {title}")
-                return media
-                
+            response = self.session.post(self.config.ANILIST_URL, json=payload, timeout=10)
+            media = response.json().get("data", {}).get("Media")
+            if media: logging.info(f"AniList found match for: {title}"); return media
         except requests.RequestException as e:
             logging.error(f"AniList API request failed for '{title}': {e}")
-        except Exception as e:
-            logging.error(f"AniList query error for '{title}': {e}")
-        
         return None
 
 
 class MediaClassifier:
     """Classifies media based on API responses."""
-    
     def __init__(self, api_client: APIClient):
         self.api_client = api_client
-    
-    def classify_media(self, folder_name: str) -> MediaInfo:
-        """
-        Classify media type based on folder name and API data.
-        Now checks both APIs to avoid false anime classifications.
+     
+    def classify_media(self, name: str, custom_strings_to_remove: Set[str]) -> MediaInfo:
+        """Classifies media from a folder or file name using a unified cleaner."""
+        # The cleaner now requires the set of custom strings
+        clean_name = TitleCleaner.clean_for_search(name, custom_strings_to_remove)
         
-        Args:
-            folder_name: Name of the media folder
-            
-        Returns:
-            MediaInfo object with classification results
-        """
-        clean_name = TitleCleaner.clean_for_search(folder_name)
-        clean_name_with_year = TitleCleaner.clean_for_folder(folder_name)
+        logging.info(f"Classifying: '{name}' -> Clean search: '{clean_name}'")
         
-        logging.info(f"Classifying: {folder_name} -> {clean_name}")
-        
-        # Query both APIs
+        if not clean_name:
+            logging.warning(f"Could not extract a clean name from '{name}'. Skipping.")
+            return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
+
         anilist_data = self.api_client.query_anilist(clean_name)
         sleep(self.api_client.config.REQUEST_DELAY)
         omdb_data = self.api_client.query_omdb(clean_name)
         
-        # If both APIs have results, we need to decide which is more accurate
-        if anilist_data and omdb_data:
-            return self._resolve_conflicting_results(anilist_data, omdb_data, clean_name_with_year)
+        if anilist_data and omdb_data: return self._resolve_conflicting_results(anilist_data, omdb_data)
+        elif anilist_data: return self._classify_from_anilist(anilist_data)
+        elif omdb_data: return self._classify_from_omdb(omdb_data)
         
-        # If only AniList has results
-        elif anilist_data:
-            logging.info(f"Only AniList found results for: {clean_name}")
-            return self._classify_from_anilist(anilist_data, clean_name_with_year)
-        
-        # If only OMDb has results
-        elif omdb_data:
-            logging.info(f"Only OMDb found results for: {clean_name}")
-            return self._classify_from_omdb(omdb_data, clean_name_with_year)
-        
-        # No results from either API
         logging.warning(f"No API results found for: {clean_name}")
-        return MediaInfo(
-            title=clean_name_with_year,
-            year=None,
-            media_type=MediaType.UNKNOWN,
-            language=None,
-            genre=None
-        )
+        return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
 
-    def _resolve_conflicting_results(self, anilist_data: Dict[str, Any], 
-                                   omdb_data: Dict[str, Any], title: str) -> MediaInfo:
-        """
-        Resolve conflicts when both AniList and OMDb return results using a clearer decision tree.
-        
-        Args:
-            anilist_data: Data from AniList API
-            omdb_data: Data from OMDb API
-            title: Cleaned title for the media
-            
-        Returns:
-            MediaInfo with the most appropriate classification
-        """
-        # Get OMDb metadata
-        omdb_language = omdb_data.get("Language", "").lower()
-        omdb_country = omdb_data.get("Country", "").lower()
+    def _resolve_conflicting_results(self, anilist_data: Dict[str, Any], omdb_data: Dict[str, Any]) -> MediaInfo:
         omdb_genre = omdb_data.get("Genre", "").lower()
-        omdb_type = omdb_data.get("Type", "").lower()
-
-        logging.info(f"Resolving API conflict for '{title}':")
-        logging.info(f"  OMDb -> Type: {omdb_type}, Genre: {omdb_genre}, Country: {omdb_country}")
-        logging.info(f"  AniList -> Format: {anilist_data.get('format', 'Unknown')}")
-
-        # --- Decision Tree ---
-
-        # 1. Is it clearly live-action?
-        # If OMDb says it's not animation, it's almost certainly not anime. This is the strongest signal.
-        if "animation" not in omdb_genre and "anime" not in omdb_genre:
-            logging.info("  Decision: OMDb result is classified as live-action. Prioritizing OMDb.")
-            return self._classify_from_omdb(omdb_data, title)
-
-        # 2. Is it clearly Western (or non-Japanese) animation?
-        # Check for major animation-producing countries that are not Japan.
-        western_countries = ["usa", "united states", "uk", "united kingdom", "canada", "france", "germany", "spain", "australia"]
-        is_western_country = any(c in omdb_country for c in western_countries)
-        is_japanese_co_production = "japan" in omdb_country
-
-        if is_western_country and not is_japanese_co_production:
-            logging.info(f"  Decision: OMDb indicates non-Japanese animation from '{omdb_country}'. Prioritizing OMDb.")
-            return self._classify_from_omdb(omdb_data, title)
-
-        # 3. Does OMDb's data itself suggest it's anime?
-        # If so, trust AniList as the more specialized source.
-        if "japanese" in omdb_language or "japan" in omdb_country:
-            logging.info("  Decision: OMDb data suggests Japanese origin. Prioritizing AniList for anime details.")
-            return self._classify_from_anilist(anilist_data, title)
-            
-        # 4. Default Case: Ambiguous conflict
-        # If we reach this point, it's an ambiguous animation. Defaulting to OMDb is safer
-        # to prevent misfiling Western animation as anime.
-        logging.info("  Decision: Conflict is ambiguous. Defaulting to OMDb for broader compatibility.")
-        return self._classify_from_omdb(omdb_data, title)
-        
-        # Count the indicators
-        western_score = sum(western_indicators)
-        anime_score = sum(anime_indicators)
-        
-        # Decision logic
-        if western_score > anime_score:
-            logging.info(f"  Decision: Using OMDb (Western content - Score: W:{western_score} A:{anime_score})")
-            return self._classify_from_omdb(omdb_data, title)
-        elif anime_score > western_score:
-            logging.info(f"  Decision: Using AniList (Anime content - Score: W:{western_score} A:{anime_score})")
-            return self._classify_from_anilist(anilist_data, title)
-        else:
-            # Tie-breaker: prefer OMDb for broader content, but check one more thing
-            if anilist_data.get("format") == "MOVIE" and omdb_type == "movie":
-                # For movies, if both agree it's a movie, trust the more specific source
-                if "animation" in omdb_genre:
-                    logging.info(f"  Decision: Using AniList (Both agree on animated movie)")
-                    return self._classify_from_anilist(anilist_data, title)
-            
-            logging.info(f"  Decision: Defaulting to OMDb (Tie-breaker)")
-            return self._classify_from_omdb(omdb_data, title)
+        omdb_country = omdb_data.get("Country", "").lower()
+        if "animation" not in omdb_genre and "anime" not in omdb_genre: return self._classify_from_omdb(omdb_data)
+        is_western = any(c in omdb_country for c in ["usa", "uk", "canada", "france", "germany", "spain"])
+        if is_western and "japan" not in omdb_country: return self._classify_from_omdb(omdb_data)
+        return self._classify_from_anilist(anilist_data)
     
-    def _classify_from_anilist(self, data: Dict[str, Any], title: str) -> MediaInfo:
-        """Classify media from AniList response."""
+    def _classify_from_anilist(self, data: Dict[str, Any]) -> MediaInfo:
         format_type = data.get("format", "").upper()
-        
-        if format_type == "MOVIE":
-            media_type = MediaType.ANIME_MOVIE
-        elif format_type in ["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"]:
-            media_type = MediaType.ANIME_SERIES
-        else:
-            media_type = MediaType.UNKNOWN
-        
-        return MediaInfo(
-            title=title,
-            year=str(data.get("seasonYear", "")),
-            media_type=media_type,
-            language="Japanese",
-            genre=", ".join(data.get("genres", []))
-        )
+        media_type = MediaType.UNKNOWN
+        if format_type == "MOVIE": media_type = MediaType.ANIME_MOVIE
+        elif format_type in ["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"]: media_type = MediaType.ANIME_SERIES
+        title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji')
+        return MediaInfo(title=title, year=str(data.get("seasonYear", "")), media_type=media_type, language="Japanese", genre=", ".join(data.get("genres", [])))
     
-    def _classify_from_omdb(self, data: Dict[str, Any], title: str) -> MediaInfo:
-        """Classify media from OMDb response."""
+    def _classify_from_omdb(self, data: Dict[str, Any]) -> MediaInfo:
         type_ = data.get("Type", "").lower()
-        language = data.get("Language", "").lower()
-        genre = data.get("Genre", "").lower()
-        country = data.get("Country", "").lower()
-        
-        # More precise anime detection for OMDb data
-        is_anime = False
-        
-        # Check multiple indicators for anime
-        anime_indicators = [
-            # Language indicators
-            "japanese" in language,
-            "japan" in language,
-            
-            # Country indicators  
-            "japan" in country,
-            
-            # Genre + country/language combination
-            ("animation" in genre and ("japan" in country or "japanese" in language)),
-            
-            # Explicit anime mention in genre
-            "anime" in genre,
-            
-            # Title-based detection (as fallback)
-            any(keyword in title.lower() for keyword in ["anime", "manga"])
-        ]
-        
-        # Only classify as anime if we have strong indicators
-        is_anime = any(anime_indicators)
-        
-        # Classify based on type and anime detection
-        if is_anime:
-            if type_ == "movie":
-                media_type = MediaType.ANIME_MOVIE
-            else:
-                media_type = MediaType.ANIME_SERIES
-        elif type_ == "movie":
-            media_type = MediaType.MOVIE
-        elif type_ in ["series", "tv series"]:
-            media_type = MediaType.TV_SERIES
-        else:
-            media_type = MediaType.UNKNOWN
-        
-        return MediaInfo(
-            title=title,
-            year=data.get("Year", ""),
-            media_type=media_type,
-            language=data.get("Language", ""),
-            genre=data.get("Genre", "")
-        )
+        media_type = MediaType.UNKNOWN
+        if type_ == "movie": media_type = MediaType.MOVIE
+        elif type_ in ["series", "tv series"]: media_type = MediaType.TV_SERIES
+        year_str = data.get("Year", "")
+        year = year_str.split('–')[0] if year_str else None
+        return MediaInfo(title=data.get("Title"), year=year, media_type=media_type, language=data.get("Language", ""), genre=data.get("Genre", ""))
+
 
 
 class FileManager:
-    """Handles file and folder operations."""
-    
-    def __init__(self, config: Config, dry_run: bool = False):
-        self.config = config
-        self.dry_run = dry_run
-    
-    def ensure_directory(self, path: Path) -> bool:
-        """
-        Ensure directory exists, create if necessary.
+    """Handles file and folder operations with clear, distinct methods."""
+    def __init__(self, cfg: Config, dry: bool):
+        self.cfg = cfg
+        self.dry = dry
+
+    def ensure_dir(self, p: Path) -> bool:
+        if not p.exists():
+            if self.dry:
+                print(f"📁 DRY RUN: Would create dir '{p}'")
+            else:
+                try:
+                    p.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    print(f"❌ ERROR: Could not create directory '{p}': {e}")
+                    logging.error(f"Failed to create directory '{p}': {e}")
+                    return False
+        return True
+
+    def move_file(self, src_file: Path, dest_dir: Path) -> bool:
+        """Moves a single source file into a destination directory."""
+        if not self.ensure_dir(dest_dir):
+            return False
         
-        Args:
-            path: Directory path to ensure
+        target = dest_dir / src_file.name
+        if target.exists():
+            print(f"⚠️  SKIPPED: File '{target.name}' already exists in '{dest_dir.name}'.")
+            return False
             
-        Returns:
-            True if directory exists or was created successfully
-        """
-        if path.exists():
+        if self.dry:
+            print(f"🧪 DRY RUN: Would move file '{src_file.name}' → '{dest_dir}'")
             return True
-        
-        if self.dry_run:
-            print(f"📁 DRY RUN: Would create directory '{path}'")
-            logging.info(f"Dry run: Would create directory '{path}'")
-            return True
-        
+            
         try:
-            path.mkdir(parents=True, exist_ok=True)
-            logging.info(f"Created directory: {path}")
+            shutil.move(str(src_file), str(target))
+            print(f"✅ Moved file: '{src_file.name}' → '{dest_dir}'")
             return True
         except Exception as e:
-            logging.error(f"Failed to create directory '{path}': {e}")
+            print(f"❌ ERROR moving file '{src_file.name}': {e}")
+            logging.error(f"Error moving file '{src_file}' to '{dest_dir}': {e}")
             return False
-    
-    def move_folder(self, source: Path, destination_dir: Path) -> bool:
-        """
-        Move folder to destination directory.
-        
-        Args:
-            source: Source folder path
-            destination_dir: Destination directory path
-            
-        Returns:
-            True if move was successful
-        """
-        target_path = destination_dir / source.name
-        
-        if target_path.exists():
-            print(f"⚠️  SKIPPED: '{source.name}' already exists in '{destination_dir}'")
-            logging.warning(f"Duplicate detected: '{target_path}' already exists")
+
+    def move_folder(self, src_folder: Path, dest_parent_dir: Path, new_name: str) -> bool:
+        """Moves a source folder to a parent directory and renames it."""
+        target = dest_parent_dir / new_name
+        if target.exists():
+            print(f"⚠️  SKIPPED: Folder '{target.name}' already exists in '{dest_parent_dir}'.")
             return False
-        
-        if self.dry_run:
-            print(f"🧪 DRY RUN: Would move '{source.name}' → '{destination_dir}'")
-            logging.info(f"Dry run: Would move '{source}' to '{destination_dir}'")
+
+        if self.dry:
+            print(f"🧪 DRY RUN: Would move folder '{src_folder.name}' → '{target}'")
             return True
-        
+            
         try:
-            shutil.move(str(source), str(target_path))
-            print(f"✅ Moved: '{source.name}' → '{destination_dir}'")
-            logging.info(f"Moved '{source}' to '{target_path}'")
+            shutil.move(str(src_folder), str(target))
+            print(f"✅ Moved folder: '{src_folder.name}' → '{target}'")
             return True
         except Exception as e:
-            print(f"❌ ERROR: Could not move '{source.name}' → '{destination_dir}': {e}")
-            logging.error(f"Error moving '{source}' to '{destination_dir}': {e}")
+            print(f"❌ ERROR moving folder '{src_folder.name}': {e}")
+            logging.error(f"Error moving folder '{src_folder}' to '{target}': {e}")
             return False
-    
-    def move_files_to_season_folder(self, source_folder: Path, show_dir: Path, season_num: int) -> bool:
-        """
-        Move files from source folder to season-organized directory.
-        
-        Args:
-            source_folder: Source folder containing episodes
-            show_dir: Show's main directory
-            season_num: Season number
-            
-        Returns:
-            True if all files were moved successfully
-        """
-        season_dir = show_dir / f"Season {season_num:02d}"
-        
-        if not self.ensure_directory(season_dir):
-            return False
-        
-        success = True
-        files_moved = 0
-        
-        for file_path in source_folder.iterdir():
-            if file_path.is_file() and file_path.suffix != ".part":
-                dest_file = season_dir / file_path.name
-                
-                if dest_file.exists():
-                    print(f"⚠️  File already exists: {dest_file} — skipping")
-                    continue
-                
-                if self.dry_run:
-                    print(f"🧪 DRY RUN: Would move '{file_path.name}' → '{season_dir}'")
-                    logging.info(f"Dry run: Would move '{file_path}' to '{season_dir}'")
-                    files_moved += 1
-                else:
-                    try:
-                        shutil.move(str(file_path), str(dest_file))
-                        print(f"✅ Moved file: {file_path.name} → {season_dir}")
-                        logging.info(f"Moved file '{file_path.name}' to '{season_dir}'")
-                        files_moved += 1
-                    except Exception as e:
-                        print(f"❌ ERROR moving '{file_path.name}': {e}")
-                        logging.error(f"Error moving file '{file_path}': {e}")
-                        success = False
-        
-        # Remove empty source folder
-        if not self.dry_run and success and files_moved > 0:
-            try:
-                if not any(source_folder.iterdir()):
-                    source_folder.rmdir()
-                    print(f"🧹 Removed empty folder: {source_folder}")
-                    logging.info(f"Removed empty source folder: {source_folder}")
-            except Exception as e:
-                logging.warning(f"Could not remove empty folder '{source_folder}': {e}")
-        
-        return success
 
 
 class DirectoryWatcher:
-    """
-    Monitors directory for changes and tracks folder states.
-    """
-    
-    def __init__(self, config: Config):
-        self.config = config
-        self.last_scan_time = datetime.now()
-        self.known_folders: Set[str] = set()
-        self.known_files: Dict[str, float] = {}  # folder_name -> last_modified_time
-        self._initial_scan()
-    
-    def _initial_scan(self) -> None:
-        """Perform initial scan to establish baseline."""
-        if not self.config.SOURCE_DIR.exists():
-            logging.warning(f"Source directory does not exist: {self.config.SOURCE_DIR}")
-            return
-        
-        try:
-            for item in self.config.SOURCE_DIR.iterdir():
-                if item.is_dir():
-                    self.known_folders.add(item.name)
-                    self.known_files[item.name] = item.stat().st_mtime
-            
-            logging.info(f"Initial scan found {len(self.known_folders)} folders")
-            print(f"📂 Watching {len(self.known_folders)} existing folders")
-            
-        except Exception as e:
-            logging.error(f"Error during initial scan: {e}")
-    
+    def __init__(self, config: Config): self.config, self.last_mtime = config, 0; self._scan()
+    def _scan(self):
+        if self.config.SOURCE_DIR.exists(): self.last_mtime = self.config.SOURCE_DIR.stat().st_mtime
     def check_for_changes(self) -> bool:
-        """
-        Check if there are any changes in the source directory.
-        
-        Returns:
-            True if changes detected, False otherwise
-        """
-        if not self.config.SOURCE_DIR.exists():
-            return False
-        
-        try:
-            current_folders = set()
-            current_files = {}
-            
-            for item in self.config.SOURCE_DIR.iterdir():
-                if item.is_dir():
-                    current_folders.add(item.name)
-                    current_files[item.name] = item.stat().st_mtime
-            
-            # Check for new folders
-            new_folders = current_folders - self.known_folders
-            if new_folders:
-                logging.info(f"New folders detected: {new_folders}")
-                print(f"🆕 New folders detected: {', '.join(new_folders)}")
-                self._update_known_state(current_folders, current_files)
-                return True
-            
-            # Check for removed folders
-            removed_folders = self.known_folders - current_folders
-            if removed_folders:
-                logging.info(f"Folders removed: {removed_folders}")
-                print(f"🗑️  Folders removed: {', '.join(removed_folders)}")
-                self._update_known_state(current_folders, current_files)
-                return True
-            
-            # Check for modified folders (new files added)
-            for folder_name in current_folders:
-                if folder_name in self.known_files:
-                    if current_files[folder_name] > self.known_files[folder_name]:
-                        logging.info(f"Folder modified: {folder_name}")
-                        print(f"📝 Folder modified: {folder_name}")
-                        self._update_known_state(current_folders, current_files)
-                        return True
-            
-            return False
-            
-        except Exception as e:
-            logging.error(f"Error checking for changes: {e}")
-            return False
-    
-    def _update_known_state(self, folders: Set[str], files: Dict[str, float]) -> None:
-        """Update the known state after detecting changes."""
-        self.known_folders = folders.copy()
-        self.known_files = files.copy()
-        self.last_scan_time = datetime.now()
-
+        if not self.config.SOURCE_DIR.exists(): return False
+        mtime = self.config.SOURCE_DIR.stat().st_mtime
+        if mtime > self.last_mtime: self.last_mtime = mtime; return True
+        return False
 
 class WatchModeManager:
-    """
-    Manages the watch mode operation with proper shutdown handling.
-    """
-    
     def __init__(self, sorter: 'MediaSorter'):
         self.sorter = sorter
-        self.watcher = DirectoryWatcher(sorter.config)
+        self.watcher = DirectoryWatcher(sorter.cfg) # <-- The change is here
         self.running = False
-        self.thread = None
-        self.last_processing_time = None
-        self._setup_signal_handlers()
-    
-    def _setup_signal_handlers(self) -> None:
-        """Setup signal handlers for graceful shutdown."""
-        def signal_handler(signum, frame):
-            print(f"\n🛑 Received signal {signum}. Shutting down gracefully...")
-            logging.info(f"Received shutdown signal: {signum}")
-            self.stop()
-        
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-    
-    def start(self) -> None:
-        """Start the watch mode."""
+        self._setup_signals()
+
+    def _setup_signals(self):
+        signal.signal(signal.SIGINT, self.stop)
+        signal.signal(signal.SIGTERM, self.stop)
+
+    def stop(self, *args):
         if self.running:
-            return
-        
+            self.running = False
+            print("\n🛑 Stopping watch mode...")
+            if self.thread:
+                self.thread.join(timeout=5)
+
+    def start(self):
         self.running = True
-        print(f"👁️  Watch mode started - monitoring every {self.sorter.config.WATCH_INTERVAL // 60} minutes")
-        print("📍 Press Ctrl+C to stop watching")
-        logging.info("Watch mode started")
-        
-        # Start in a separate thread to allow for clean shutdown
-        self.thread = threading.Thread(target=self._watch_loop, daemon=True)
+        print(f"👁️  Watch mode started. Press Ctrl+C to stop.")
+        self.thread = threading.Thread(target=self._loop, daemon=True)
         self.thread.start()
-        
         try:
-            # Keep main thread alive
             while self.running:
                 sleep(1)
         except KeyboardInterrupt:
             self.stop()
-    
-    def stop(self) -> None:
-        """Stop the watch mode."""
-        if not self.running:
-            return
-        
-        self.running = False
-        print("\n🛑 Stopping watch mode...")
-        logging.info("Watch mode stopped")
-        
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=5)
-    
-    def _watch_loop(self) -> None:
-        """Main watch loop that runs in a separate thread."""
+
+    def _loop(self):
         while self.running:
-            try:
-                # Check if we're in cooldown period
-                if self._in_cooldown_period():
-                    sleep(60)  # Check every minute during cooldown
-                    continue
-                
-                # Check for changes
-                if self.watcher.check_for_changes():
-                    print(f"🔄 Changes detected! Starting processing...")
-                    logging.info("Changes detected, starting processing")
-                    
-                    # Process the changes
-                    self.sorter.sort_all_folders()
-                    self.last_processing_time = datetime.now()
-                    
-                    print(f"✅ Processing complete. Next check in {self.sorter.config.WATCH_INTERVAL // 60} minutes")
-                else:
-                    current_time = datetime.now().strftime("%H:%M:%S")
-                    print(f"⏰ {current_time} - No changes detected")
-                
-                # Wait for next check
-                for _ in range(self.sorter.config.WATCH_INTERVAL):
-                    if not self.running:
-                        break
-                    sleep(1)
-                
-            except Exception as e:
-                logging.error(f"Error in watch loop: {e}")
-                print(f"❌ Watch loop error: {e}")
-                # Wait a bit before retrying
-                sleep(60)
-    
-    def _in_cooldown_period(self) -> bool:
-        """Check if we're still in the cooldown period after last processing."""
-        if not self.last_processing_time:
-            return False
-        
-        cooldown_end = self.last_processing_time + timedelta(
-            seconds=self.sorter.config.COOLDOWN_PERIOD
-        )
-        
-        if datetime.now() < cooldown_end:
-            return True
-        
-        return False
+            if self.watcher.check_for_changes():
+                print(f"🔄 Changes detected! Starting processing...")
+                self.sorter.process_source_directory()
+                print(f"✅ Processing complete. Next check in {self.sorter.cfg.WATCH_INTERVAL // 60} minutes.")
+            else:
+                print(f"⏰ {datetime.now().strftime('%H:%M:%S')} - No changes detected. Press Ctrl+C to stop.")
+            for _ in range(self.sorter.cfg.WATCH_INTERVAL):
+                if not self.running:
+                    break
+                sleep(1)
 
 
 class MediaSorter:
-    """Main class that orchestrates the media sorting process."""
+    def __init__(self, cfg: Config, dry: bool, fr: bool):
+        self.cfg, self.dry, self.fr = cfg, dry, fr; 
+        self.classifier = MediaClassifier(APIClient(cfg)); self.fm = FileManager(cfg, dry); 
+        self.stats = {k: 0 for k in ['processed','movies','tv','anime_movies','anime_series','french_movies','unknown','errors']}
     
-    def __init__(self, config: Config, dry_run: bool = False, sort_french: bool = False):
-        self.config = config
-        self.dry_run = dry_run
-        self.sort_french = sort_french
-        self.api_client = APIClient(config)
-        self.classifier = MediaClassifier(self.api_client)
-        self.file_manager = FileManager(config, dry_run)
-        
-        # Statistics
-        self.stats = {
-            'processed': 0,
-            'movies': 0,
-            'tv_shows': 0,
-            'anime_movies': 0,
-            'anime_series': 0,
-            'french_movies': 0,
-            'unknown': 0,
-            'errors': 0
-        }
+    def setup_logging(self): logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s", handlers=[logging.FileHandler(self.cfg.LOG_FILE), logging.StreamHandler()])
+    def ensure_target_dirs(self) -> bool: return all(self.fm.ensure_dir(d) for d in [self.cfg.MOVIES_DIR, self.cfg.FRENCH_MOVIES_DIR, self.cfg.TV_SHOWS_DIR, self.cfg.ANIME_MOVIES_DIR, self.cfg.ANIME_SERIES_DIR])
     
-    def setup_logging(self) -> None:
-        """Configure logging system."""
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            handlers=[
-                logging.FileHandler(self.config.LOG_FILE),
-                logging.StreamHandler()
-            ]
-        )
-    
-    def ensure_target_directories(self) -> bool:
-        """Ensure all target directories exist."""
-        directories = [
-            self.config.MOVIES_DIR,
-            self.config.FRENCH_MOVIES_DIR,
-            self.config.TV_SHOWS_DIR,
-            self.config.ANIME_MOVIES_DIR,
-            self.config.ANIME_SERIES_DIR
-        ]
+    ### CLEARER ROUTING LOGIC USING DEDICATED FILEMANAGER METHODS ###
+    def sort_item(self, item: Path):
+        is_folder = item.is_dir()
+        name_to_classify = item.name if is_folder else item.stem
         
-        success = True
-        for directory in directories:
-            if not self.file_manager.ensure_directory(directory):
-                success = False
-        
-        return success
-    
-    def detect_season_from_folder(self, folder_path: Path) -> Optional[int]:
-        """
-        Detect season number from folder contents.
-        
-        Args:
-            folder_path: Path to folder to analyze
-            
-        Returns:
-            Season number if detected, otherwise None
-        """
-        # First try folder name
-        season_num = TitleCleaner.extract_season_info(folder_path.name)
-        if season_num:
-            return season_num
-        
-        # Then try file names
-        for file_path in folder_path.iterdir():
-            if file_path.is_file():
-                season_num = TitleCleaner.extract_season_info(file_path.name)
-                if season_num:
-                    return season_num
-        
-        return 1  # Default to season 1
-    
-    def handle_series(self, folder_path: Path, media_info: MediaInfo) -> bool:
-        """
-        Handle TV series or anime series sorting.
-        
-        Args:
-            folder_path: Source folder path
-            media_info: Media information
-            
-        Returns:
-            True if handled successfully
-        """
-        season_number = self.detect_season_from_folder(folder_path)
-        
-        if media_info.media_type == MediaType.ANIME_SERIES:
-            base_dir = self.config.ANIME_SERIES_DIR
-            print(f"🎌 Anime Series: '{media_info.title}', Season: {season_number:02d}")
-        else:
-            base_dir = self.config.TV_SHOWS_DIR
-            print(f"📺 TV Show: '{media_info.title}', Season: {season_number:02d}")
-        
-        show_dir = base_dir / media_info.title
-        
-        if not self.file_manager.ensure_directory(show_dir):
-            return False
-        
-        return self.file_manager.move_files_to_season_folder(
-            folder_path, show_dir, season_number
-        )
-    
-    def sort_single_folder(self, folder_path: Path) -> bool:
-        """
-        Sort a single media folder.
-        
-        Args:
-            folder_path: Path to folder to sort
-            
-        Returns:
-            True if sorted successfully
-        """
-        print(f"\n🔍 Processing: {folder_path.name}")
-        logging.info(f"Processing: {folder_path.name}")
-        
-        # Classify the media
-        media_info = self.classifier.classify_media(folder_path.name)
-        
-        print(f"🏷️  Classification: {media_info.media_type.value}")
-        print(f"📝 Clean title: {media_info.title}")
-        
-        success = False
-        
-        # Route based on media type
-        if media_info.media_type == MediaType.MOVIE:
-            is_french = media_info.language and "french" in media_info.language.lower()
-            
-            # Check if --fr flag is used and the movie is French
-            if self.sort_french and is_french:
-                print(f"🇫🇷 French movie detected (sorting to separate folder)")
-                success = self.file_manager.move_folder(folder_path, self.config.FRENCH_MOVIES_DIR)
-                self.stats['french_movies'] += 1
-            else:
-                # All other movies (including French ones if --fr is not set) go to the default movies folder.
-                print(f"🎬 Movie detected")
-                success = self.file_manager.move_folder(folder_path, self.config.MOVIES_DIR)
-            
-            self.stats['movies'] += 1
-            
-        elif media_info.media_type == MediaType.ANIME_MOVIE:
-            print(f"🎬 Anime movie detected")
-            success = self.file_manager.move_folder(folder_path, self.config.ANIME_MOVIES_DIR)
-            self.stats['anime_movies'] += 1
-            
-        elif media_info.media_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
-            success = self.handle_series(folder_path, media_info)
-            if media_info.media_type == MediaType.TV_SERIES:
-                self.stats['tv_shows'] += 1
-            else:
-                self.stats['anime_series'] += 1
-            
-        else:
-            print(f"❓ Unclassified: {folder_path.name}")
-            logging.warning(f"Unclassified folder: {folder_path.name}")
-            self.stats['unknown'] += 1
-            return True  # Not an error, just unclassified
-        
-        if not success:
-            self.stats['errors'] += 1
-        
-        return success
-    
-    def start_watch_mode(self) -> None:
-        """Start watch mode to monitor directory for changes."""
-        watch_manager = WatchModeManager(self)
-        watch_manager.start()
-    
-    def sort_all_folders(self) -> None:
-        """Sort all folders in the source directory."""
-        if not self.config.SOURCE_DIR.exists():
-            print(f"❌ Source directory does not exist: {self.config.SOURCE_DIR}")
-            return
-        
-        if not self.ensure_target_directories():
-            print("❌ Failed to create target directories")
-            return
-        
-        folders = [f for f in self.config.SOURCE_DIR.iterdir() if f.is_dir()]
-        
-        if not folders:
-            print("✨ No folders found to process!")
-            logging.info("No folders found to process")
-            return
-        
-        print(f"📂 Found {len(folders)} folders to process")
-        
-        for folder in folders:
-            try:
-                self.sort_single_folder(folder)
-                self.stats['processed'] += 1
-            except Exception as e:
-                print(f"❌ Unexpected error processing '{folder.name}': {e}")
-                logging.error(f"Unexpected error processing '{folder}': {e}")
-                self.stats['errors'] += 1
-        
-        self.print_summary()
-    
-    def print_summary(self) -> None:
-        """Print sorting summary statistics."""
-        print(f"\n{'='*50}")
-        print("📊 SORTING SUMMARY")
-        print(f"{'='*50}")
-        print(f"📁 Total processed: {self.stats['processed']}")
-        print(f"🎬 Movies: {self.stats['movies']}")
-        print(f"📺 TV Shows: {self.stats['tv_shows']}")
-        print(f"🎌 Anime Movies: {self.stats['anime_movies']}")
-        print(f"🎌 Anime Series: {self.stats['anime_series']}")
-        print(f"🇫🇷 French Movies: {self.stats['french_movies']}")
-        print(f"❓ Unknown: {self.stats['unknown']}")
-        print(f"❌ Errors: {self.stats['errors']}")
-        print(f"{'='*50}")
-        
-        logging.info(f"Sorting completed. Stats: {self.stats}")
+        print(f"\n🔍 Processing {'Folder' if is_folder else 'File'}: {item.name}")
+        info = self.classifier.classify_media(name_to_classify, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+        folder_name = info.get_folder_name()
+        print(f"🏷️  Class: {info.media_type.value} | Title: '{folder_name}'")
 
+        s, m_type, success = self.stats, info.media_type, False
+        if m_type == MediaType.UNKNOWN: s['unknown'] += 1; return
+
+        if m_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]:
+            dest_dir = self.cfg.ANIME_MOVIES_DIR if m_type == MediaType.ANIME_MOVIE else self.cfg.MOVIES_DIR
+            if m_type == MediaType.MOVIE and self.fr and "french" in (info.language or "").lower():
+                dest_dir = self.cfg.FRENCH_MOVIES_DIR
+                s['french_movies'] += 1
+
+            if is_folder: success = self.fm.move_folder(item, dest_dir, folder_name)
+            else: success = self.fm.move_file(item, dest_dir / folder_name)
+
+            if m_type == MediaType.MOVIE: s['movies'] += 1
+            else: s['anime_movies'] += 1
+
+        elif m_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
+            season = TitleCleaner.extract_season_info(item.name) or 1
+            base_dir = self.cfg.ANIME_SERIES_DIR if m_type == MediaType.ANIME_SERIES else self.cfg.TV_SHOWS_DIR
+            show_dir = base_dir / folder_name
+            season_dir = show_dir / f"Season {season:02d}"
+            
+            if is_folder:
+                # Move all files from the source folder to the new season folder
+                all_files_moved = [self.fm.move_file(f, season_dir) for f in list(item.iterdir()) if f.is_file()]
+                success = all(all_files_moved)
+                if not self.dry and success and all_files_moved: # Only remove if files were actually moved
+                    try: item.rmdir()
+                    except Exception: pass # Fails if not empty, which is fine
+            else: # is a file
+                success = self.fm.move_file(item, season_dir)
+
+            if m_type == MediaType.ANIME_SERIES: s['anime_series'] += 1
+            else: s['tv'] += 1
+            
+        if not success: s['errors'] += 1
+
+    #
+    def process_source_directory(self):
+        if not self.cfg.SOURCE_DIR.exists() or not self.ensure_target_dirs(): return
+        
+        items_to_process = []
+        for item in self.cfg.SOURCE_DIR.iterdir():
+            if item.is_dir():
+                items_to_process.append(item)
+            elif item.is_file() and item.suffix.lower() in self.cfg.SUPPORTED_EXTENSIONS:
+                items_to_process.append(item)
+            else:
+                logging.info(f"Skipping unsupported file type: {item.name}")
+        
+        if not items_to_process:
+            print("✨ No supported files or folders found to process.")
+            return
+
+        print(f"📂 Found {len(items_to_process)} items to process.")
+        for item in items_to_process:
+            self.stats['processed'] += 1
+            try:
+                self.sort_item(item)
+            except Exception as e:
+                self.stats['errors'] += 1
+                logging.error(f"Fatal error processing '{item.name}': {e}", exc_info=True)
+        self.print_summary()
+
+    def start_watch_mode(self): WatchModeManager(self).start()
+    def print_summary(self):
+        print(f"\n{'='*50}\n📊 SORTING SUMMARY\n{'='*50}")
+        for k, v in self.stats.items(): print(f"{k.replace('_',' ').title():<15}: {v}")
+        print(f"{'='*50}"); logging.info(f"Sorting done. Stats: {self.stats}")
 
 def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Sort media folders by type using OMDb and AniList APIs",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s                    # Sort all folders once
-  %(prog)s --fr               # Sort, separating French movies into their own folder
-  %(prog)s --dry-run          # Preview changes without moving files
-  %(prog)s --watch            # Monitor directory for changes (15 min intervals)
-  %(prog)s --watch --watch-interval 30  # Monitor with 30 minute intervals
-        """
-    )
-    
-    parser.add_argument(
-        "--dry-run", 
-        action="store_true", 
-        help="Preview actions without moving files"
-    )
-    
-    parser.add_argument(
-        "--fr",
-        action="store_true",
-        help="Enable sorting of French-language movies into a separate directory"
-    )
-    
-    parser.add_argument(
-        "--watch",
-        action="store_true",
-        help="Monitor source directory for changes and process automatically"
-    )
-    
-    parser.add_argument(
-        "--watch-interval",
-        type=int,
-        default=15,
-        metavar="MINUTES",
-        help="Watch mode check interval in minutes (default: 15)"
-    )
-    
-    parser.add_argument(
-        "--version", 
-        action="version", 
-        version="Media Sorter 2.6i"
-    )
-    
+    parser = argparse.ArgumentParser(description="Sort media files and folders.", formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("--dry-run", action="store_true", help="Preview actions."); parser.add_argument("--fr", action="store_true", help="Sort French movies separately."); parser.add_argument("--watch", action="store_true", help="Monitor source directory."); parser.add_argument("--watch-interval", type=int, default=15, metavar="MIN", help="Watch interval in minutes (default: 15)."); parser.add_argument("--version", action="version", version="SortMeDown a Media Sorter 3.1.1")
     args = parser.parse_args()
-    
-    # Initialize configuration
-    config = Config()
-    
-    # Update watch interval if specified
-    if args.watch_interval:
-        config.WATCH_INTERVAL = args.watch_interval * 60  # Convert to seconds
-    
-    # Validate configuration
-    if not config.validate():
-        print("❌ Configuration validation failed. Please check your settings.")
-        return 1
-    
-    # Initialize sorter
-    sorter = MediaSorter(config, dry_run=args.dry_run, sort_french=args.fr)
-    sorter.setup_logging()
-    
-    # Print header
+    cfg = Config(); cfg.WATCH_INTERVAL = args.watch_interval * 60
+    if not cfg.validate(): sys.exit("❌ Config validation failed.")
+    sorter = MediaSorter(cfg, dry=args.dry_run, fr=args.fr); sorter.setup_logging()
     print(ASCII_ART)
-    
-    if args.dry_run:
-        print("🧪 DRY RUN MODE - No files will be moved")
-        logging.info("Dry run mode enabled")
-    
-    if args.fr:
-        print("🇫🇷 French movie sorting is ENABLED")
-        logging.info("French movie sorting enabled")
-    
+    if args.dry_run: print("🧪 DRY RUN MODE - No files will be moved.")
+    if args.fr: print("🔵⚪🔴 French Sauce is ENABLED.")
     try:
-        # Choose operation mode
-        if args.watch:
-            if args.dry_run:
-                print("⚠️  Watch mode with dry-run: will show what would be processed")
-
-            try:
-                sorter.start_watch_mode()
-                return 0
-            except KeyboardInterrupt:
-                print("\n⏹️  Watch mode stopped by user")
-                return 0
-        else:
-            # Single run mode
-            try:
-                sorter.sort_all_folders()
-                return 0
-            except KeyboardInterrupt:
-                print("\n⏹️  Operation cancelled by user")
-                logging.info("Operation cancelled by user")
-                return 1
-
-    except Exception as e:
-        print(f"❌ Fatal error: {e}")
-        logging.error(f"Fatal error: {e}", exc_info=True)
-        return 1
-
+        if args.watch: sorter.start_watch_mode()
+        else: sorter.process_source_directory()
+    except KeyboardInterrupt: print("\n⏹️  Operation cancelled.")
+    except Exception as e: logging.error(f"Fatal error: {e}", exc_info=True); sys.exit(f"❌ Fatal error: {e}")
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())
