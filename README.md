@@ -18,13 +18,13 @@ Features:
 
 Arguments:
 
-python bangbang.py                                  # One-time sorting (original behavior)
-python bangbang.py --fr                             # Sorts, and separates French movies
-python bangbang.py --dry-run                        # Preview mode
-python bangbang.py --version                        # Show version
-python bangbang.py --watch                          # Standard watch mode (15 minute intervals)
-python bangbang.py --watch --watch-interval 30      # Custom interval (30 minutes)
-python bangbang.py --watch --dry-run                # Watch mode with dry-run (perfect for testing)
+- python bangbang.py                                  # One-time sorting (original behavior)
+- python bangbang.py --fr                             # Sorts, and separates French movies
+- python bangbang.py --dry-run                        # Preview mode
+- python bangbang.py --version                        # Show version
+- python bangbang.py --watch                          # Standard watch mode (15 minute intervals)
+- python bangbang.py --watch --watch-interval 30      # Custom interval (30 minutes)
+- python bangbang.py --watch --dry-run                # Watch mode with dry-run (perfect for testing)
 
 
 
