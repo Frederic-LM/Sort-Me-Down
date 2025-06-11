@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
 """
-SortmeDown Media Sorter Script
+SortMeDown a Media Sorter Script
 ==================
 
 Automatically sorts media files (movies, TV shows, anime) into organized directories
 based on metadata from OMDb API and AniList API.
 
 Features:
-- Automatic detection of movies, TV series, and Anime & Anime serie
+- Automatic detection of movies, TV series, and anime
+- Multi-language support (English/French movies)
 - Season-based organization for TV shows
 - Dry-run mode for safe testing
 - Comprehensive logging
 - Duplicate detection and handling
 - Intergrated watchdog
-- Dual Api logic for better detection
+- Dedicated French movies folder if run with --fr argument
+- Revised Logic with less bias (no longer reling on "english" as primary key word) 
 
-python media_sorter.py                # One-time sorting (original behavior)
-python media_sorter.py --dry-run      # Preview mode
-python media_sorter.py --version      # Show version
-python media_sorter.py --watch                          # Standard watch mode (15 minute intervals)
-python media_sorter.py --watch --watch-interval 30      # Custom interval (30 minutes)
-python media_sorter.py --watch --dry-run                # Watch mode with dry-run (perfect for testing)
+python bangbang.py                                  # One-time sorting (original behavior)
+python bangbang.py --fr                             # Sorts, and separates French movies
+python bangbang.py --dry-run                        # Preview mode
+python bangbang.py --version                        # Show version
+python bangbang.py --watch                          # Standard watch mode (15 minute intervals)
+python bangbang.py --watch --watch-interval 30      # Custom interval (30 minutes)
+python bangbang.py --watch --dry-run                # Watch mode with dry-run (perfect for testing)
 
 
-Version: 2.61i
+Version: 2.8i
 
 
 """
@@ -55,7 +58,7 @@ ASCII_ART = """
 ▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░   ░ ▒░   ░  ░░░ ▒░ ░ ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
 ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░    ░  ░      ░ ░ ░  ░ ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
 ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░      ░      ░      ░    ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
-      ░      ░ ░     ░                     ░      ░  ░   ░        ░ ░      ░        2.6i░ 
+      ░      ░ ░     ░                     ░      ░  ░   ░        ░ ░      ░        2.8i░ 
                                                        ░                                  
 """
 
@@ -85,19 +88,20 @@ class Config:
     
     def __init__(self):
         # Directory Configuration
-        self.SOURCE_DIR = Path("C:/download/unsorted")          # Replace with your media download directory
-        self.MOVIES_DIR = Path("B:/Movies")        # Replace with your Movies directory
-        self.TV_SHOWS_DIR = Path("B:/Series")      # Replace with your TV Shows directory
-        self.ANIME_MOVIES_DIR = Path("B:/Anime_Movies") # Replace with your Anime Movies directory
-        self.ANIME_SERIES_DIR = Path("B:/Anime_TV")# Replace with your Anime Series directory
+        self.SOURCE_DIR = Path("C:/download/unsorted")           # Replace with your media download directory
+        self.MOVIES_DIR = Path("D:/Movies")                      # Replace with your Movies directory
+        self.FRENCH_MOVIES_DIR = Path("D:/Films")                # Replace with your Movies directory =>> only needed if you intend the --f argument
+        self.TV_SHOWS_DIR = Path("D:/Series")                    # Replace with your TV Shows directory
+        self.ANIME_MOVIES_DIR = Path("D:/Anime_Movies")          # Replace with your Anime Movies directory
+        self.ANIME_SERIES_DIR = Path("D:/Anime_TV")              # Replace with your Anime Series directory
         
         # API Configuration
-        self.OMDB_API_KEY = "0000000"  # Replace with your actual omdbapi API key
+        self.OMDB_API_KEY = "yourkey"  # Replace with your actual omdbapi API key
         self.OMDB_URL = "http://www.omdbapi.com/"
         self.ANILIST_URL = "https://graphql.anilist.co"
         
         # Logging Configuration
-        self.LOG_FILE = "F:/media_sorter.log"
+        self.LOG_FILE = "D:/media_sorter.log"
         
         # Processing Configuration
         self.REQUEST_DELAY = 1.0  # Delay between API requests (seconds)
@@ -218,7 +222,7 @@ class APIClient:
         self.config = config
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'MediaSorter/2.0 (https://github.com/user/media-sorter)'
+            'User-Agent': 'SortMeDown/2.8 (https://github.com/Frederic-LM/Sort-Me-Down)'
         })
     
     def query_omdb(self, title: str) -> Optional[Dict[str, Any]]:
@@ -370,8 +374,7 @@ class MediaClassifier:
     def _resolve_conflicting_results(self, anilist_data: Dict[str, Any], 
                                    omdb_data: Dict[str, Any], title: str) -> MediaInfo:
         """
-        Resolve conflicts when both AniList and OMDb return results.
-        Prioritizes OMDb for non-Japanese content.
+        Resolve conflicts when both AniList and OMDb return results using a clearer decision tree.
         
         Args:
             anilist_data: Data from AniList API
@@ -386,37 +389,40 @@ class MediaClassifier:
         omdb_country = omdb_data.get("Country", "").lower()
         omdb_genre = omdb_data.get("Genre", "").lower()
         omdb_type = omdb_data.get("Type", "").lower()
-        
-        # Log the conflict for debugging
+
         logging.info(f"Resolving API conflict for '{title}':")
-        logging.info(f"  OMDb - Type: {omdb_type}, Language: {omdb_language}, Country: {omdb_country}")
-        logging.info(f"  AniList - Format: {anilist_data.get('format', 'Unknown')}")
-        
-        # Strong indicators this is Western content, not anime
-        western_indicators = [
-            # English-speaking countries with English language
-            ("english" in omdb_language and 
-             any(country in omdb_country for country in ["usa", "united states", "uk", "united kingdom", "canada", "australia"])),
+        logging.info(f"  OMDb -> Type: {omdb_type}, Genre: {omdb_genre}, Country: {omdb_country}")
+        logging.info(f"  AniList -> Format: {anilist_data.get('format', 'Unknown')}")
+
+        # --- Decision Tree ---
+
+        # 1. Is it clearly live-action?
+        # If OMDb says it's not animation, it's almost certainly not anime. This is the strongest signal.
+        if "animation" not in omdb_genre and "anime" not in omdb_genre:
+            logging.info("  Decision: OMDb result is classified as live-action. Prioritizing OMDb.")
+            return self._classify_from_omdb(omdb_data, title)
+
+        # 2. Is it clearly Western (or non-Japanese) animation?
+        # Check for major animation-producing countries that are not Japan.
+        western_countries = ["usa", "united states", "uk", "united kingdom", "canada", "france", "germany", "spain", "australia"]
+        is_western_country = any(c in omdb_country for c in western_countries)
+        is_japanese_co_production = "japan" in omdb_country
+
+        if is_western_country and not is_japanese_co_production:
+            logging.info(f"  Decision: OMDb indicates non-Japanese animation from '{omdb_country}'. Prioritizing OMDb.")
+            return self._classify_from_omdb(omdb_data, title)
+
+        # 3. Does OMDb's data itself suggest it's anime?
+        # If so, trust AniList as the more specialized source.
+        if "japanese" in omdb_language or "japan" in omdb_country:
+            logging.info("  Decision: OMDb data suggests Japanese origin. Prioritizing AniList for anime details.")
+            return self._classify_from_anilist(anilist_data, title)
             
-            # English language without Japanese
-            ("english" in omdb_language and "japanese" not in omdb_language and "japan" not in omdb_country),
-            
-            # Specific western countries
-            any(country in omdb_country for country in ["usa", "united states", "uk", "united kingdom", "canada"]) and "japan" not in omdb_country,
-            
-            # Non-animated western content
-            (omdb_type in ["series", "movie"] and "animation" not in omdb_genre and "english" in omdb_language)
-        ]
-        
-        # Strong indicators this is actually anime
-        anime_indicators = [
-            # Japanese language or origin
-            "japanese" in omdb_language,
-            "japan" in omdb_country and "animation" in omdb_genre,
-            
-            # AniList format suggests genuine anime
-            anilist_data.get("format") in ["TV", "TV_SHORT", "MOVIE", "ONA", "OVA", "SPECIAL"],
-        ]
+        # 4. Default Case: Ambiguous conflict
+        # If we reach this point, it's an ambiguous animation. Defaulting to OMDb is safer
+        # to prevent misfiling Western animation as anime.
+        logging.info("  Decision: Conflict is ambiguous. Defaulting to OMDb for broader compatibility.")
+        return self._classify_from_omdb(omdb_data, title)
         
         # Count the indicators
         western_score = sum(western_indicators)
@@ -831,9 +837,10 @@ class WatchModeManager:
 class MediaSorter:
     """Main class that orchestrates the media sorting process."""
     
-    def __init__(self, config: Config, dry_run: bool = False):
+    def __init__(self, config: Config, dry_run: bool = False, sort_french: bool = False):
         self.config = config
         self.dry_run = dry_run
+        self.sort_french = sort_french
         self.api_client = APIClient(config)
         self.classifier = MediaClassifier(self.api_client)
         self.file_manager = FileManager(config, dry_run)
@@ -845,6 +852,7 @@ class MediaSorter:
             'tv_shows': 0,
             'anime_movies': 0,
             'anime_series': 0,
+            'french_movies': 0,
             'unknown': 0,
             'errors': 0
         }
@@ -864,6 +872,7 @@ class MediaSorter:
         """Ensure all target directories exist."""
         directories = [
             self.config.MOVIES_DIR,
+            self.config.FRENCH_MOVIES_DIR,
             self.config.TV_SHOWS_DIR,
             self.config.ANIME_MOVIES_DIR,
             self.config.ANIME_SERIES_DIR
@@ -952,8 +961,18 @@ class MediaSorter:
         
         # Route based on media type
         if media_info.media_type == MediaType.MOVIE:
-            print(f"🎬 Movie detected")
-            success = self.file_manager.move_folder(folder_path, self.config.MOVIES_DIR)
+            is_french = media_info.language and "french" in media_info.language.lower()
+            
+            # Check if --fr flag is used and the movie is French
+            if self.sort_french and is_french:
+                print(f"🇫🇷 French movie detected (sorting to separate folder)")
+                success = self.file_manager.move_folder(folder_path, self.config.FRENCH_MOVIES_DIR)
+                self.stats['french_movies'] += 1
+            else:
+                # All other movies (including French ones if --fr is not set) go to the default movies folder.
+                print(f"🎬 Movie detected")
+                success = self.file_manager.move_folder(folder_path, self.config.MOVIES_DIR)
+            
             self.stats['movies'] += 1
             
         elif media_info.media_type == MediaType.ANIME_MOVIE:
@@ -1024,11 +1043,14 @@ class MediaSorter:
         print(f"📺 TV Shows: {self.stats['tv_shows']}")
         print(f"🎌 Anime Movies: {self.stats['anime_movies']}")
         print(f"🎌 Anime Series: {self.stats['anime_series']}")
+        print(f"🇫🇷 French Movies: {self.stats['french_movies']}")
         print(f"❓ Unknown: {self.stats['unknown']}")
         print(f"❌ Errors: {self.stats['errors']}")
         print(f"{'='*50}")
         
         logging.info(f"Sorting completed. Stats: {self.stats}")
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -1037,6 +1059,7 @@ def main():
         epilog="""
 Examples:
   %(prog)s                    # Sort all folders once
+  %(prog)s --fr               # Sort, separating French movies into their own folder
   %(prog)s --dry-run          # Preview changes without moving files
   %(prog)s --watch            # Monitor directory for changes (15 min intervals)
   %(prog)s --watch --watch-interval 30  # Monitor with 30 minute intervals
@@ -1047,6 +1070,12 @@ Examples:
         "--dry-run", 
         action="store_true", 
         help="Preview actions without moving files"
+    )
+    
+    parser.add_argument(
+        "--fr",
+        action="store_true",
+        help="Enable sorting of French-language movies into a separate directory"
     )
     
     parser.add_argument(
@@ -1066,7 +1095,7 @@ Examples:
     parser.add_argument(
         "--version", 
         action="version", 
-        version="Media Sorter 2.0"
+        version="Media Sorter 2.6i"
     )
     
     args = parser.parse_args()
@@ -1084,7 +1113,7 @@ Examples:
         return 1
     
     # Initialize sorter
-    sorter = MediaSorter(config, dry_run=args.dry_run)
+    sorter = MediaSorter(config, dry_run=args.dry_run, sort_french=args.fr)
     sorter.setup_logging()
     
     # Print header
@@ -1093,6 +1122,10 @@ Examples:
     if args.dry_run:
         print("🧪 DRY RUN MODE - No files will be moved")
         logging.info("Dry run mode enabled")
+    
+    if args.fr:
+        print("🇫🇷 French movie sorting is ENABLED")
+        logging.info("French movie sorting enabled")
     
     try:
         # Choose operation mode
