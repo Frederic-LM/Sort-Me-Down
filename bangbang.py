@@ -110,8 +110,8 @@ class Config:
         self.OMDB_API_KEY = "yourkey"  # Replace with your actual API key from www.omdbapi.com
         self.OMDB_URL = "http://www.omdbapi.com/"
         self.ANILIST_URL = "https://graphql.anilist.co"
-        # Logging Configuration
-        self.LOG_FILE = "C:/download/unsorted/sortmedown.log"  #change where ever you want it
+        # Log file created where the script is called from
+        self.LOG_FILE = Path(__file__).parent / "bangbangSMD.log"
         # Processing Configuration
         self.REQUEST_DELAY = 1.0  # Delay between API requests (seconds)
         self.MAX_RETRIES = 3
