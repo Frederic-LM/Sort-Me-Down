@@ -28,8 +28,8 @@ python bangbang.py --watch --watch-interval 30      # Custom interval (30 minute
 python bangbang.py --watch --dry-run                # Watch mode with dry-run (perfect for testing)
 
 
-Version: 3.1.1
-
+Version: 3.1.2
+updated watch logic => added initial sort before the watch
 
 """
 
@@ -177,7 +177,7 @@ class TitleCleaner:
 
     @classmethod
     def extract_season_info(cls, filename: str) -> Optional[int]:
-        # This method is unchanged and correct
+        
         patterns = [r'[Ss](\d{1,2})[Ee]\d{1,2}', r'Season[ _-]?(\d{1,2})', r'[Ss](\d{1,2})']
         for p in patterns:
             if m:=re.search(p, filename, re.IGNORECASE): return int(m.group(1))
@@ -191,7 +191,7 @@ class APIClient:
         self.session.headers.update({'User-Agent': 'SortMeDown/3.1.1'})
     
     def query_omdb(self, title: str) -> Optional[Dict[str, Any]]:
-        # Logic remains the same
+       
         params = {"t": title, "apikey": self.config.OMDB_API_KEY}
         try:
             response = self.session.get(self.config.OMDB_URL, params=params, timeout=10)
@@ -209,7 +209,7 @@ class APIClient:
         return None
     
     def query_anilist(self, title: str) -> Optional[Dict[str, Any]]:
-        # Logic remains the same
+        
         query = '''query ($search: String) { Media(search: $search, type: ANIME) { title { romaji english native } format, genres, season, seasonYear, episodes } }'''
         payload = {"query": query, "variables": {"search": title}}
         try:
@@ -228,7 +228,7 @@ class MediaClassifier:
      
     def classify_media(self, name: str, custom_strings_to_remove: Set[str]) -> MediaInfo:
         """Classifies media from a folder or file name using a unified cleaner."""
-        # The cleaner now requires the set of custom strings
+       
         clean_name = TitleCleaner.clean_for_search(name, custom_strings_to_remove)
         
         logging.info(f"Classifying: '{name}' -> Clean search: '{clean_name}'")
@@ -347,7 +347,7 @@ class DirectoryWatcher:
         mtime = self.config.SOURCE_DIR.stat().st_mtime
         if mtime > self.last_mtime: self.last_mtime = mtime; return True
         return False
-
+### updated ####
 class WatchModeManager:
     def __init__(self, sorter: 'MediaSorter'):
         self.sorter = sorter
@@ -369,6 +369,15 @@ class WatchModeManager:
     def start(self):
         self.running = True
         print(f"👁️  Watch mode started. Press Ctrl+C to stop.")
+
+        # Perform an initial sort immediately
+        print("\n🚀 Performing initial sort...")
+        self.sorter.process_source_directory()
+        print(f"✅ Initial sort complete. Now watching for changes...")
+        
+        # Update the watcher's baseline to the post-sort state
+        self.watcher._scan()
+        
         self.thread = threading.Thread(target=self._loop, daemon=True)
         self.thread.start()
         try:
@@ -384,7 +393,9 @@ class WatchModeManager:
                 self.sorter.process_source_directory()
                 print(f"✅ Processing complete. Next check in {self.sorter.cfg.WATCH_INTERVAL // 60} minutes.")
             else:
-                print(f"⏰ {datetime.now().strftime('%H:%M:%S')} - No changes detected. Press Ctrl+C to stop.")
+                print(f"⏰ {datetime.now().strftime('%H:%M:%S')} - No changes detected. Next check in {self.sorter.cfg.WATCH_INTERVAL // 60} minutes. Press Ctrl+C to stop.")
+            
+            # Wait for the specified interval, but check for stop signal every second
             for _ in range(self.sorter.cfg.WATCH_INTERVAL):
                 if not self.running:
                     break
@@ -400,7 +411,7 @@ class MediaSorter:
     def setup_logging(self): logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s", handlers=[logging.FileHandler(self.cfg.LOG_FILE), logging.StreamHandler()])
     def ensure_target_dirs(self) -> bool: return all(self.fm.ensure_dir(d) for d in [self.cfg.MOVIES_DIR, self.cfg.FRENCH_MOVIES_DIR, self.cfg.TV_SHOWS_DIR, self.cfg.ANIME_MOVIES_DIR, self.cfg.ANIME_SERIES_DIR])
     
-    ### CLEARER ROUTING LOGIC USING DEDICATED FILEMANAGER METHODS ###
+    
     def sort_item(self, item: Path):
         is_folder = item.is_dir()
         name_to_classify = item.name if is_folder else item.stem
