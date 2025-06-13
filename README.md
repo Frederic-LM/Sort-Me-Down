@@ -40,9 +40,10 @@ CLI (Comand Line Interface)
 
 Optional:  Have you system runing it at log in  either with the wath dog , or as a sheduled one time (default behavior)
 
-GUI (work in progress)
+GUI 1.2 (work in progress) ! the GUI has now more feature than the CLI, as it allows to run selectively for Movies, Show, Anime etc
+
 - pip install -r requirements.txt
 - python gui.py
-GUI 1.2
-! the GUI has now more feature than the CLI, as it allows to run selectively for Movies, Show, Anime etc
+- bangbang_backend.py  <= more feat
+
 
