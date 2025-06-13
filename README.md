@@ -43,4 +43,6 @@ Optional:  Have you system runing it at log in  either with the wath dog , or as
 GUI (work in progress)
 - pip install -r requirements.txt
 - python gui.py
+GUI 1.2
+! the GUI has now more feature than the CLI, as it allows to run selectively for Movies, Show, Anime etc
 
