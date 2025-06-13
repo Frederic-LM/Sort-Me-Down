@@ -9,19 +9,19 @@ to interact with the sorting logic defined in `bangbang_backend.py`.
 Major Feature Iterations: 
 -------------------------
 
-version 1.17
+version 1.21
 
-- UI Sync Bug Fix: Fixed a bug where toggling "French Mode" from the Actions
-  tab would not correctly show/hide the corresponding path entry field in the
-  Settings tab. A unified command function was created and assigned to both
-  checkboxes to ensure their behavior and the UI state are always synchronized.
+- Icon Path Type Fix: Fixed a bug where window and tray icons would not load
+  when running from source. The issue was that core Tkinter and PIL functions
+  were being passed a `pathlib.Path` object instead of the required string
+  path. All calls to `resource_path()` are now explicitly cast to `str()` to
+  ensure compatibility.
 
-version 1.16
+version 1.20
 
-- Configurable Strings to Remove: Exposed the backend's
-  `CUSTOM_STRINGS_TO_REMOVE` list in the Settings tab. This allows users to
-  customize keywords (e.g., 'VOSTFR', '1080p', 'x265') that are stripped
-  from filenames before API searches, improving classification accuracy.
+- Robust Asset Pathing: Implemented a `resource_path` helper function to
+  ensure that asset files (like icons) are found correctly, regardless of
+  whether the application is run from source or as a compiled executable.
 
 (Older version history omitted for brevity)
 """
@@ -33,13 +33,24 @@ import threading
 from pathlib import Path
 from PIL import Image, ImageDraw
 import pystray
+import sys
+import tkinter
+import os
 
 import bangbang_backend as backend
 
 CONFIG_FILE = Path("config.json")
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = Path(sys._MEIPASS)
+    except Exception:
+        base_path = Path(__file__).parent.absolute()
+    return base_path / relative_path
+
+
 class GuiLoggingHandler(logging.Handler):
-    # ... (no changes in this class)
     def __init__(self, text_widget):
         super().__init__(); self.text_widget = text_widget
         self.text_widget.tag_config("INFO", foreground="white"); self.text_widget.tag_config("DRYRUN", foreground="#00FFFF")
@@ -67,6 +78,19 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("SortMeDown Media Sorter"); self.geometry("900x800"); ctk.set_appearance_mode("Dark")
+        
+        # <<< MODIFIED: All calls are now wrapped with str() to ensure compatibility
+        try:
+            if sys.platform == "win32":
+                self.iconbitmap(str(resource_path("icon.ico")))
+            else:
+                icon_image = tkinter.PhotoImage(file=str(resource_path("icon.png")))
+                self.iconphoto(True, icon_image)
+        except Exception as e:
+            logging.warning(f"Could not set window icon: {e}")
+            print(f"Error setting window icon: {e}. Make sure 'icon.ico' (Windows) or 'icon.png' (macOS/Linux) exists next to gui.py.")
+        
+        # ... (rest of __init__ is unchanged)
         self.config = backend.Config.load(CONFIG_FILE)
         self.sorter_thread = None; self.sorter_instance = None; self.tray_icon = None; self.tab_view = None
         self.is_quitting = False; self.path_entries = {}; self.default_button_color = None; self.default_hover_color = None
@@ -88,7 +112,8 @@ class App(ctk.CTk):
         self.log_textbox = ctk.CTkTextbox(self, state="disabled", font=("Courier New", 12))
         self.log_textbox.grid(row=1, column=0, padx=10, pady=(0,10), sticky="nsew")
         self.setup_logging(); self.protocol("WM_DELETE_WINDOW", self.quit_app); self.bind("<Unmap>", self.on_minimize); self.setup_tray_icon()
-        
+
+    # ... (code between here and create_tray_image is unchanged)
     def setup_logging(self):
         log_handler = GuiLoggingHandler(self.log_textbox)
         log_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", "%H:%M:%S"))
@@ -150,7 +175,6 @@ class App(ctk.CTk):
             ).grid(row=0, column=col_counter, padx=5, pady=5)
             col_counter += 1
 
-        # <<< MODIFIED: Use the new unified command function
         ctk.CTkCheckBox(
             toggles_frame, text="French Mode", variable=self.fr_sauce_var,
             command=self._on_french_mode_toggled
@@ -158,12 +182,8 @@ class App(ctk.CTk):
         
         self.toggle_cleanup_mode_ui()
 
-    # <<< NEW: This function will be the single command for both French Mode checkboxes
     def _on_french_mode_toggled(self):
-        """Unified command to sync French Mode UI across both tabs."""
-        # First, ensure the path entry visibility is correct on the Settings tab.
         self.toggle_french_dir_visibility()
-        # Second, perform the path check/prompt logic.
         self.check_and_prompt_for_path('FRENCH_MOVIES_DIR', self.fr_sauce_var)
 
     def check_and_prompt_for_path(self, dir_key: str, bool_var: ctk.BooleanVar):
@@ -214,7 +234,6 @@ class App(ctk.CTk):
         for dir_key, (label_text, enable_key) in dir_map.items():
             row_counter = self._create_path_entry_row(parent, row_counter, dir_key, label_text, enable_key)
 
-        # <<< MODIFIED: Use the new unified command function here as well
         self.fr_check = ctk.CTkCheckBox(parent, text="Enable French Mode", variable=self.fr_sauce_var, command=self._on_french_mode_toggled)
         self.fr_check.grid(row=row_counter, column=0, padx=5, pady=5, sticky="w")
         self.french_dir_entry = ctk.CTkEntry(parent, width=400)
@@ -250,8 +269,6 @@ class App(ctk.CTk):
             self.french_dir_entry.grid(row=french_row, column=1, padx=5, pady=5, sticky="ew")
             self.french_dir_browse.grid(row=french_row, column=2, padx=5, pady=5)
         else: self.french_dir_entry.grid_remove(); self.french_dir_browse.grid_remove()
-    
-    # ... (rest of the file is unchanged)
     def on_api_key_type(self, event=None):
         if self.api_key_entry.cget("show") == "": self.api_key_entry.configure(show="*")
     def browse_folder(self, entry_widget):
@@ -259,9 +276,11 @@ class App(ctk.CTk):
         if folder_path := filedialog.askdirectory(initialdir=initial_dir):
             entry_widget.delete(0, ctk.END); entry_widget.insert(0, folder_path)
     def save_settings(self):
-        self.update_config_from_ui(); self.config.save(CONFIG_FILE)
+        self.update_config_from_ui()
+        self.config.save(CONFIG_FILE)
         logging.info("✅ Settings saved to config.json")
-        if self.tray_icon: self.tray_icon.update_menu()
+        if self.tray_icon and not self.is_quitting:
+            self.tray_icon.update_menu()
     def update_config_from_ui(self):
         for key, entry in self.path_entries.items(): setattr(self.config, key, entry.get())
         for key, var in self.enabled_vars.items(): setattr(self.config, key, var.get())
@@ -303,14 +322,23 @@ class App(ctk.CTk):
             self.sort_now_button.configure(state="normal"); self.watch_button.configure(text="Start Watching", state="normal")
             self.stop_button.configure(state="disabled", text="", fg_color="gray25")
             self.sorter_instance = None; self.sorter_thread = None; self.is_watching = False
-            if self.tray_icon: self.tray_icon.update_menu()
+            if self.tray_icon and not self.is_quitting:
+                self.tray_icon.update_menu()
             self.toggle_cleanup_mode_ui()
+
     def create_tray_image(self):
-        width, height = 64, 64; color1, color2 = "#1F6AA5", "#144870"
-        image = Image.new('RGB', (width, height), color1); dc = ImageDraw.Draw(image)
-        dc.rectangle((width // 2, 0, width, height // 2), fill=color2)
-        dc.rectangle((0, height // 2, width // 2, height), fill=color2)
-        return image
+        # <<< MODIFIED: Use str() here as well for maximum robustness
+        try:
+            return Image.open(str(resource_path("icon.png")))
+        except Exception as e:
+            logging.warning(f"Could not load tray icon from file: {e}. Creating fallback icon.")
+            width, height = 64, 64; color1, color2 = "#1F6AA5", "#144870"
+            image = Image.new('RGB', (width, height), color1); dc = ImageDraw.Draw(image)
+            dc.rectangle((width // 2, 0, width, height // 2), fill=color2)
+            dc.rectangle((0, height // 2, width // 2, height), fill=color2)
+            return image
+
+    # ... (The rest of the file is unchanged)
     def quit_app(self):
         if self.is_quitting: return
         self.is_quitting = True; logging.info("Shutting down...")
@@ -349,6 +377,7 @@ class App(ctk.CTk):
         )
         self.tray_icon = pystray.Icon("sortmedown", image, "SortMeDown Sorter", menu)
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
 
 if __name__ == "__main__":
     app = App()
