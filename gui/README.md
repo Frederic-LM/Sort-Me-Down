@@ -1,46 +1,88 @@
-The GUI may be used as is providing you have Python on your devise
+## Usage
 
-You may want to compile it to an executable for your machine:
+There are two primary ways to run the SortMeDown GUI.
 
-Step 1: Preparation
-    Install PyInstaller: If you don't have it, open your command prompt or terminal and install it:
-         
+### Option 1: Running from Source (with Python)
+
+This is the recommended method for developers or users who have Python installed on their system.
+
+1.  **Install Dependencies:**
+    Open a terminal or command prompt and install the required Python packages:
+    ```bash
+    pip install customtkinter requests pystray
+    ```
+    > **Note for Linux Users:** You may need to install `tkinter` separately if it wasn't included with your Python installation. For Debian/Ubuntu, use: `sudo apt install python3-tk`.
+
+2.  **Run the Application:**
+    Navigate to the project directory and run the `gui.py` script:
+    ```bash
+    python gui.py
+    ```
+
+---
+
+### Option 2: Compiling into a Standalone Executable
+
+This method bundles the application and all its dependencies into a single file that can be run on other computers without needing to install Python.
+
+#### Prerequisites
+
+1.  **Install PyInstaller:** This tool is used to create the executable.
+    ```bash
     pip install pyinstaller
- 
-Project Structure: Make sure your final files are in a clean directory. Your structure should look like this:
-      
-your-project-folder/
-├── gui.py
-├── bangbang_backend.py
-└── icon.ico
+    ```
+2.  **Prepare Project Files:**
+    Ensure your project directory is clean and contains the necessary files. You will also need an icon file appropriate for your operating system.
+    ```
+    your-project-folder/
+    ├── gui.py
+    ├── bangbang_backend.py
+    └── icon.ico  (for Windows) OR icon.icns (for macOS)
+    ```
 
-    
-Step 2: The PyInstaller Command
+---
 
-On windows: 
-Open a command prompt or terminal in your project folder and run the following command:
- 
-pyinstaller --onefile --windowed --hidden-import="pystray._win32" --icon="icon.ico" gui.py
+#### For Windows (.exe)
 
-Inside the dist this folder, you will find your final gui.exe file that can be shared and run without python installed.
+1.  **Run the PyInstaller Command:**
+    Open a command prompt or terminal in your project directory and execute the following command:
+    ```bash
+    pyinstaller --onefile --windowed --hidden-import="pystray._win32" --icon="icon.ico" gui.py
+    ```
+2.  **Find Your Executable:**
+    After the process completes, a `dist` folder will be created. Inside this folder, you will find your final `gui.exe` file. This file can be shared and run on any modern Windows machine.
 
+---
 
-on MacOS
+#### For macOS (.app)
 
-# Install Homebrew if you don't have it
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-# Install Python
-brew install python
-#Install Dependencies
-pip3 install pyinstaller customtkinter requests pystray
-You will need to use icon.icns file instead of the icon.ico
+> **Important:** You must compile the macOS application **on a macOS machine**.
 
-then run :
-pyinstaller --onefile --windowed --hidden-import="pystray._darwin" --icon="icon.icns" gui.py
+1.  **Install Prerequisites (on a Mac):**
+    If you don't have them, install Homebrew and the required Python packages via the Terminal.
+    ```bash
+    # Install Homebrew (if not already installed)
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-this will create the executable inside the dist folder
-Security & Gatekeeper (IMPORTANT!): The very first time you run the app, macOS security (Gatekeeper) will likely block it because it's from an "unidentified developer" (i.e., you haven't paid Apple for a developer certificate). To run it, your users must right-click the gui.app file and select "Open". They will then get a dialog box that has a new "Open" button, allowing them to run the app. They only need to do this once.Config File Location: The config.json file will be created next to gui.app inside the dist folder.
-Distribute: You can zip the gui.app file and give it to any other Mac user. Just remember to include the instructions for them to "Right-click and Open" it the first time.
+    # Install Python and dependencies
+    brew install python
+    pip3 install pyinstaller customtkinter requests pystray
+    ```
+2.  **Prepare Icon:**
+    Make sure you have an `icon.icns` file for your application icon.
 
+3.  **Run the PyInstaller Command:**
+    In your project directory, execute the following command:
+    ```bash
+    pyinstaller --onefile --windowed --hidden-import="pystray._darwin" --icon="icon.icns" gui.py
+    ```
 
-    
+4.  **Find and Run Your Application:**
+    The `dist` folder will contain your final `gui.app` bundle.
+
+    > **Gatekeeper Security Warning (CRITICAL!)**
+    > The first time you run the app, macOS will likely block it as it's from an "unidentified developer."
+    >
+    > **To run it, you must right-click the `gui.app` file and select "Open" from the context menu.**
+    >
+    > A dialog will appear with an "Open" button that will allow you to run the application. This only needs to be done once.
