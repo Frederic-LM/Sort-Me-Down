@@ -1,0 +1,4 @@
+customtkinter
+requests
+pystray
+Pillow
