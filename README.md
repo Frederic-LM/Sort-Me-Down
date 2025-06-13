@@ -42,7 +42,7 @@ Optional:  Have you system runing it at log in  either with the wath dog , or as
 
 GUI 1.2 (work in progress) ! the GUI has now more feature than the CLI, as it allows to run selectively for Movies, Show, Anime etc
 
-- pip install -r requirements.txt
+- pip install -r requirement.txt
 - python gui.py
 - bangbang_backend.py  <= more feat
 
