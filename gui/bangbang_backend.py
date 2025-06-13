@@ -1,3 +1,5 @@
+#backeng for GUI 1.1
+
 from pathlib import Path
 import re
 import shutil
@@ -31,7 +33,12 @@ class Config:
         self.CUSTOM_STRINGS_TO_REMOVE = ['FRENCH', 'TRUEFRENCH', 'VOSTFR', 'MULTI', 'SUBFRENCH']
         self.OMDB_API_KEY = "yourkey"; self.OMDB_URL = "http://www.omdbapi.com/"; self.ANILIST_URL = "https://graphql.anilist.co"
         self.REQUEST_DELAY = 1.0; self.WATCH_INTERVAL = 15 * 60
-        self.FRENCH_MODE_ENABLED = False # <-- ADDED THIS LINE
+        self.FRENCH_MODE_ENABLED = False
+        # --- NEW ATTRIBUTES ---
+        self.MOVIES_ENABLED = True
+        self.TV_SHOWS_ENABLED = True
+        self.ANIME_MOVIES_ENABLED = True
+        self.ANIME_SERIES_ENABLED = True
 
     def get_path(self, key: str) -> Optional[Path]:
         p = getattr(self, key)
@@ -39,14 +46,8 @@ class Config:
     def get_set(self, key: str) -> Set[str]:
         return set(getattr(self, key))
     def to_dict(self):
-        return {
-            "SOURCE_DIR": self.SOURCE_DIR, "MOVIES_DIR": self.MOVIES_DIR, "FRENCH_MOVIES_DIR": self.FRENCH_MOVIES_DIR,
-            "TV_SHOWS_DIR": self.TV_SHOWS_DIR, "ANIME_MOVIES_DIR": self.ANIME_MOVIES_DIR, "ANIME_SERIES_DIR": self.ANIME_SERIES_DIR,
-            "SUPPORTED_EXTENSIONS": self.SUPPORTED_EXTENSIONS, "CUSTOM_STRINGS_TO_REMOVE": self.CUSTOM_STRINGS_TO_REMOVE,
-            "OMDB_API_KEY": self.OMDB_API_KEY, "OMDB_URL": self.OMDB_URL, "ANILIST_URL": self.ANILIST_URL,
-            "REQUEST_DELAY": self.REQUEST_DELAY, "WATCH_INTERVAL": self.WATCH_INTERVAL,
-            "FRENCH_MODE_ENABLED": self.FRENCH_MODE_ENABLED # <-- ADDED THIS LINE
-        }
+        # This will now automatically include the new attributes
+        return {key: value for key, value in self.__dict__.items() if not key.startswith('_')}
     @classmethod
     def from_dict(cls, data):
         config = cls()
@@ -57,18 +58,14 @@ class Config:
         with open(path, 'w') as f: json.dump(self.to_dict(), f, indent=4)
     @classmethod
     def load(cls, path: Path):
-        if not path.exists():
-            logging.info("config.json not found. It will be created when you save settings.")
-            return cls()
+        if not path.exists(): return cls()
         try:
             with open(path, 'r') as f:
                 content = f.read()
-                if not content:
-                    logging.warning(f"'{path}' is empty. Loading default settings.")
-                    return cls()
+                if not content: return cls()
                 return cls.from_dict(json.loads(content))
         except (json.JSONDecodeError, Exception) as e:
-            logging.error(f"Error loading '{path}': {e}. Loading default settings.")
+            logging.error(f"Error loading '{path}': {e}. Loading defaults.")
             return cls()
     def validate(self) -> bool:
         if not self.OMDB_API_KEY or self.OMDB_API_KEY == "yourkey":
@@ -80,7 +77,7 @@ class Config:
             return False
         return True
 
-# ... All other backend classes remain identical ...
+# ... TitleCleaner, APIClient, MediaClassifier, and FileManager classes are unchanged ...
 class TitleCleaner:
     METADATA_BREAKPOINT_PATTERN = re.compile(r'('r'\s[\(\[]?\d{4}[\)\]]?\b'r'|\s[Ss]\d{1,2}[Ee]\d{1,2}\b'r'|\s[Ss]\d{1,2}\b'r'|\sSeason\s\d{1,2}\b'r'|\s\d{3,4}p\b'r'|\s(WEBRip|BluRay|BDRip|DVDRip|HDRip|WEB-DL|HDTV)\b'r'|\s(x264|x265|H\.?264|H\.?265|HEVC|AVC)\b'r')', re.IGNORECASE)
     @classmethod
@@ -184,25 +181,19 @@ class FileManager:
         except Exception as e: logging.error(f"❌ ERROR moving folder '{src_folder.name}': {e}"); return False
 class DirectoryWatcher:
     def __init__(self, config: Config):
-        self.config = config
-        self.last_mtime = 0
-        self._scan()
+        self.config = config; self.last_mtime = 0; self._scan()
     def _scan(self):
         if (source_dir := self.config.get_path('SOURCE_DIR')) and source_dir.exists():
             self.last_mtime = source_dir.stat().st_mtime
     def check_for_changes(self) -> bool:
         if (source_dir := self.config.get_path('SOURCE_DIR')) and source_dir.exists():
             if (mtime := source_dir.stat().st_mtime) > self.last_mtime:
-                self.last_mtime = mtime
-                return True
+                self.last_mtime = mtime; return True
         return False
 class WatchModeManager:
     def __init__(self, sorter: 'MediaSorter'):
-        self.sorter = sorter
-        self.watcher = DirectoryWatcher(sorter.cfg)
-        self.stop_event = threading.Event()
-    def stop(self):
-        self.stop_event.set()
+        self.sorter = sorter; self.watcher = DirectoryWatcher(sorter.cfg); self.stop_event = threading.Event()
+    def stop(self): self.stop_event.set()
     def start(self):
         logging.info("🚀 Performing initial sort...")
         self.sorter.process_source_directory(stop_event=self.stop_event)
@@ -214,30 +205,50 @@ class WatchModeManager:
                 logging.info(f"🔄 Changes detected! Starting processing...")
                 self.sorter.process_source_directory(stop_event=self.stop_event)
                 logging.info(f"✅ Processing complete.")
-            if self.stop_event.wait(timeout=self.sorter.cfg.WATCH_INTERVAL):
-                break
+            if self.stop_event.wait(timeout=self.sorter.cfg.WATCH_INTERVAL): break
         logging.info("🛑 Watch mode stopped.")
+
 class MediaSorter:
-    def __init__(self, cfg: Config, dry: bool, fr: bool):
-        self.cfg, self.dry, self.fr = cfg, dry, fr
+    def __init__(self, cfg: Config, dry: bool):
+        self.cfg, self.dry = cfg, dry # fr is now part of cfg
         self.api_client = APIClient(cfg); self.classifier = MediaClassifier(self.api_client)
         self.fm = FileManager(cfg, dry); self.watch_manager = None
         self.stats = {k: 0 for k in ['processed','movies','tv','anime_movies','anime_series','french_movies','unknown','errors']}
+
     def ensure_target_dirs(self) -> bool:
-        dirs = [self.cfg.get_path(k) for k in ['MOVIES_DIR', 'TV_SHOWS_DIR', 'ANIME_MOVIES_DIR', 'ANIME_SERIES_DIR']]
-        if self.fr: dirs.append(self.cfg.get_path('FRENCH_MOVIES_DIR'))
-        return all(self.fm.ensure_dir(d) for d in dirs if d)
+        # Now only creates directories for enabled types
+        dirs_to_check = []
+        if self.cfg.MOVIES_ENABLED: dirs_to_check.append(self.cfg.get_path('MOVIES_DIR'))
+        if self.cfg.TV_SHOWS_ENABLED: dirs_to_check.append(self.cfg.get_path('TV_SHOWS_DIR'))
+        if self.cfg.ANIME_MOVIES_ENABLED: dirs_to_check.append(self.cfg.get_path('ANIME_MOVIES_DIR'))
+        if self.cfg.ANIME_SERIES_ENABLED: dirs_to_check.append(self.cfg.get_path('ANIME_SERIES_DIR'))
+        if self.cfg.FRENCH_MODE_ENABLED: dirs_to_check.append(self.cfg.get_path('FRENCH_MOVIES_DIR'))
+        return all(self.fm.ensure_dir(d) for d in dirs_to_check if d)
+
     def sort_item(self, item: Path):
         is_folder = item.is_dir()
         name_to_classify = item.name if is_folder else item.stem
         info = self.classifier.classify_media(name_to_classify, self.cfg.get_set('CUSTOM_STRINGS_TO_REMOVE'))
         logging.info(f"🏷️  Class: {info.media_type.value} | Title: '{info.get_folder_name()}'")
+
         s, m_type = self.stats, info.media_type
-        if m_type == MediaType.UNKNOWN: s['unknown'] += 1; return
+        
+        # --- NEW LOGIC BLOCK TO CHECK IF SORTING IS ENABLED ---
+        if m_type == MediaType.MOVIE and not self.cfg.MOVIES_ENABLED:
+            logging.warning("Skipping movie sort (disabled in settings)."); return
+        if m_type == MediaType.TV_SERIES and not self.cfg.TV_SHOWS_ENABLED:
+            logging.warning("Skipping TV show sort (disabled in settings)."); return
+        if m_type == MediaType.ANIME_MOVIE and not self.cfg.ANIME_MOVIES_ENABLED:
+            logging.warning("Skipping anime movie sort (disabled in settings)."); return
+        if m_type == MediaType.ANIME_SERIES and not self.cfg.ANIME_SERIES_ENABLED:
+            logging.warning("Skipping anime series sort (disabled in settings)."); return
+        if m_type == MediaType.UNKNOWN:
+            s['unknown'] += 1; return
+
         success = False
         if m_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]:
             dest_dir, key = (self.cfg.get_path('ANIME_MOVIES_DIR'), 'anime_movies') if m_type == MediaType.ANIME_MOVIE else (self.cfg.get_path('MOVIES_DIR'), 'movies')
-            if m_type == MediaType.MOVIE and self.fr and "french" in (info.language or "").lower():
+            if m_type == MediaType.MOVIE and self.cfg.FRENCH_MODE_ENABLED and "french" in (info.language or "").lower():
                 dest_dir, key = self.cfg.get_path('FRENCH_MOVIES_DIR'), 'french_movies'
             if not dest_dir: logging.error(f"Target directory for {m_type.value} not set."); s['errors'] += 1; return
             folder_name = info.get_folder_name()
@@ -262,6 +273,7 @@ class MediaSorter:
             else: success = self.fm.move_file(item, season_dir)
             if success: s[key] += 1
             else: s['errors'] += 1
+
     def process_source_directory(self, stop_event: Optional[threading.Event] = None):
         source_dir = self.cfg.get_path('SOURCE_DIR')
         self.stats = {k: 0 for k in self.stats}
@@ -273,9 +285,7 @@ class MediaSorter:
         else:
             logging.info(f"📂 Found {len(items)} items to process.")
             for item in items:
-                if stop_event and stop_event.is_set():
-                    logging.warning("🛑 Sort run aborted by user.")
-                    break
+                if stop_event and stop_event.is_set(): logging.warning("🛑 Sort run aborted by user."); break
                 self.stats['processed'] += 1
                 try: self.sort_item(item)
                 except Exception as e: self.stats['errors'] += 1; logging.error(f"Fatal error on '{item.name}': {e}", exc_info=True)
