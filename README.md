@@ -1,4 +1,4 @@
-SortMeDown a Media Sorter Script Version: 3.1.1
+SortMeDown a Media Sorter Script Version: 3.1.2
 ==================
 
 Automatically sorts media files (movies, TV shows, anime) into organized directories
