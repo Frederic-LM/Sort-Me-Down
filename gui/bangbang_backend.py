@@ -8,6 +8,15 @@ frontend, such as the command-line interface or `gui.py`.
 
 Major Feature Iterations & Architectural Changes:
 -------------------------------------------------
+version 1.11
+
+- Sidecar File Handling: Re-architected the file moving logic to intelligently
+  detect and move "sidecar" files (e.g., .srt, .sub, .nfo) along with their
+  primary media file. The sorter now processes file *groups* instead of
+  individual files, preventing subtitles and metadata from being left behind.
+  This was achieved by adding a `_find_sidecar_files` method to the
+  FileManager and updating the `sort_item` logic.
+
 version 1.10
 
 - Initial Refactor: Separated from the original `bangbang.py` script to remove
@@ -47,7 +56,7 @@ import shutil
 import requests
 import logging
 from time import sleep
-from typing import Optional, Dict, Any, Set
+from typing import Optional, Dict, Any, Set, List
 import json
 import threading
 from datetime import datetime
@@ -70,7 +79,12 @@ class Config:
     def __init__(self):
         self.SOURCE_DIR = ""; self.MOVIES_DIR = ""; self.FRENCH_MOVIES_DIR = ""
         self.TV_SHOWS_DIR = ""; self.ANIME_MOVIES_DIR = ""; self.ANIME_SERIES_DIR = ""
-        self.SUPPORTED_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp', '.ogv', '.ts', '.m2ts', '.mts' , '.sub']
+        # <<< CHANGE: Added common sidecar file extensions
+        self.SUPPORTED_EXTENSIONS = [
+            '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', 
+            '.mpg', '.mpeg', '.3gp', '.ogv', '.ts', '.m2ts', '.mts'
+        ]
+        self.SIDECAR_EXTENSIONS = ['.srt', '.sub', '.nfo', '.txt', '.jpg', '.png']
         self.CUSTOM_STRINGS_TO_REMOVE = ['FRENCH', 'TRUEFRENCH', 'VOSTFR', 'MULTI', 'SUBFRENCH']
         self.OMDB_API_KEY = "yourkey"; self.OMDB_URL = "http://www.omdbapi.com/"; self.ANILIST_URL = "https://graphql.anilist.co"
         self.REQUEST_DELAY = 1.0; self.WATCH_INTERVAL = 15 * 60
@@ -180,8 +194,19 @@ class MediaClassifier:
         type_ = data.get("Type", "").lower()
         m_type = MediaType.MOVIE if type_ == "movie" else MediaType.TV_SERIES if type_ in ["series", "tv series"] else MediaType.UNKNOWN
         return MediaInfo(title=data.get("Title"), year=(data.get("Year", "") or "").split('–')[0], media_type=m_type, language=data.get("Language", ""), genre=data.get("Genre", ""))
+
 class FileManager:
     def __init__(self, cfg: Config, dry: bool): self.cfg, self.dry = cfg, dry
+
+    def _find_sidecar_files(self, primary_file: Path) -> List[Path]:
+        # <<< CHANGE: New method to find associated files (subtitles, nfo, etc.)
+        sidecars = []
+        stem = primary_file.stem
+        for sibling in primary_file.parent.iterdir():
+            if sibling != primary_file and sibling.stem == stem and sibling.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS:
+                sidecars.append(sibling)
+        return sidecars
+
     def ensure_dir(self, p: Path) -> bool:
         if not p: logging.error("❌ ERROR: Destination directory path is not set."); return False
         if not p.exists():
@@ -190,18 +215,48 @@ class FileManager:
                 try: p.mkdir(parents=True, exist_ok=True)
                 except Exception as e: logging.error(f"❌ ERROR: Could not create directory '{p}': {e}"); return False
         return True
-    def move_file(self, src_file: Path, dest_dir: Path) -> bool:
+
+    def move_file_group(self, file_group: List[Path], dest_dir: Path) -> bool:
+        # <<< CHANGE: Method now handles a group of files instead of one.
         if not self.ensure_dir(dest_dir): return False
-        target = dest_dir / src_file.name
-        if str(src_file.resolve()) == str(target.resolve()):
-            logging.info(f"Skipping move: '{src_file.name}' is already in its correct location."); return True
-        if target.exists(): logging.warning(f"⚠️  SKIPPED: File '{target.name}' already exists in '{dest_dir.name}'."); return False
-        if self.dry: logging.info(f"🧪 DRY RUN: Would move file '{src_file.name}' → '{dest_dir}'"); return True
-        try:
-            shutil.move(str(src_file), str(target))
-            logging.info(f"✅ Moved file: '{src_file.name}' → '{dest_dir.name}'")
-            return True
-        except Exception as e: logging.error(f"❌ ERROR moving file '{src_file.name}': {e}"); return False
+        
+        primary_file = file_group[0]
+        success_count = 0
+
+        for file_to_move in file_group:
+            target = dest_dir / file_to_move.name
+            if str(file_to_move.resolve()) == str(target.resolve()):
+                logging.info(f"Skipping move: '{file_to_move.name}' is already in its correct location.")
+                success_count += 1
+                continue
+            
+            if target.exists():
+                logging.warning(f"⚠️  SKIPPED: File '{target.name}' already exists in '{dest_dir.name}'.")
+                continue # Skip this file but try to move others in the group
+
+            if self.dry:
+                # <<< CHANGE: Improved dry-run logging
+                log_prefix = "🧪 DRY RUN:"
+                if file_to_move != primary_file:
+                    log_prefix += " (sidecar)"
+                logging.info(f"{log_prefix} Would move '{file_to_move.name}' → '{dest_dir}'")
+                success_count += 1
+                continue
+            
+            try:
+                shutil.move(str(file_to_move), str(target))
+                log_prefix = "✅ Moved"
+                if file_to_move != primary_file:
+                    log_prefix += " (sidecar)"
+                logging.info(f"{log_prefix}: '{file_to_move.name}' → '{dest_dir.name}'")
+                success_count += 1
+            except Exception as e:
+                logging.error(f"❌ ERROR moving file '{file_to_move.name}': {e}")
+
+        # Return True only if the primary file was moved successfully.
+        return success_count > 0 and primary_file not in [f for f in file_group if not (dest_dir / f.name).exists()]
+
+
 class DirectoryWatcher:
     def __init__(self, config: Config):
         self.config = config; self.last_mtime = 0; self._scan()
@@ -239,7 +294,7 @@ class MediaSorter:
         self.fm = FileManager(cfg, dry); self.watch_manager = None
         self.stats = {k: 0 for k in ['processed','movies','tv','anime_movies','anime_series','french_movies','unknown','errors']}
         self.stop_event = threading.Event()
-        self.is_processing = False # <-- NEW
+        self.is_processing = False
 
     def signal_stop(self):
         self.stop_event.set()
@@ -255,9 +310,31 @@ class MediaSorter:
         return all(self.fm.ensure_dir(d) for d in dirs_to_check if d)
 
     def sort_item(self, item: Path):
+        # <<< CHANGE: Skip sidecar files; they will be handled with their primary media file.
+        if item.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS:
+            # Check if a corresponding media file exists. If not, it's an orphan we can't process.
+            has_media_partner = any(
+                (item.parent / f"{item.stem}{ext}").exists() 
+                for ext in self.cfg.SUPPORTED_EXTENSIONS
+            )
+            if has_media_partner:
+                logging.debug(f"Skipping sidecar '{item.name}', will be processed with its media file.")
+                return
+            else:
+                logging.warning(f"Orphan sidecar file '{item.name}' found without a primary media file. Cannot process.")
+
+        # The item is a primary media file.
+        files_to_move = [item] + self.fm._find_sidecar_files(item)
+        num_sidecars = len(files_to_move) - 1
+        
         name_to_classify = item.parent.name if item.parent != self.cfg.get_path('SOURCE_DIR') else item.stem
         info = self.classifier.classify_media(name_to_classify, self.cfg.get_set('CUSTOM_STRINGS_TO_REMOVE'))
-        logging.info(f"🏷️  Class: {info.media_type.value} | Title: '{info.get_folder_name()}'")
+        
+        log_msg = f"🏷️  Class: {info.media_type.value} | Title: '{info.get_folder_name()}'"
+        if num_sidecars > 0:
+            log_msg += f" | Found {num_sidecars} sidecar file(s)."
+        logging.info(log_msg)
+
         s, m_type = self.stats, info.media_type
         if m_type == MediaType.MOVIE and not self.cfg.MOVIES_ENABLED: logging.warning("Skipping movie sort (disabled)."); return
         if m_type == MediaType.TV_SERIES and not self.cfg.TV_SHOWS_ENABLED: logging.warning("Skipping TV show sort (disabled)."); return
@@ -279,40 +356,57 @@ class MediaSorter:
         if m_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]:
             key = 'anime_movies' if m_type == MediaType.ANIME_MOVIE else 'french_movies' if base_dir == self.cfg.get_path('FRENCH_MOVIES_DIR') else 'movies'
             dest_folder = base_dir / info.get_folder_name()
-            success = self.fm.move_file(item, dest_folder)
+            # <<< CHANGE: Call move_file_group instead of move_file
+            success = self.fm.move_file_group(files_to_move, dest_folder)
             if success: s[key] += 1
             else: s['errors'] += 1
         elif m_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
             key = 'anime_series' if m_type == MediaType.ANIME_SERIES else 'tv'
             season = TitleCleaner.extract_season_info(item.name) or 1
             season_dir = base_dir / info.get_folder_name() / f"Season {season:02d}"
-            success = self.fm.move_file(item, season_dir)
+            # <<< CHANGE: Call move_file_group instead of move_file
+            success = self.fm.move_file_group(files_to_move, season_dir)
             if success: s[key] += 1
             else: s['errors'] += 1
 
     def process_source_directory(self):
-        self.is_processing = True # <-- SET FLAG
+        self.is_processing = True
         try:
             self.stop_event.clear()
             source_dir = self.cfg.get_path('SOURCE_DIR')
             self.stats = {k: 0 for k in self.stats}
             if not source_dir or not source_dir.exists() or not self.ensure_target_dirs():
                 logging.error("Source/Target directory validation failed."); self.print_summary(); return
+            
             logging.info("Scanning for media files...")
-            all_media_files = [p for ext in self.cfg.get_set('SUPPORTED_EXTENSIONS') for p in source_dir.glob(f'**/*{ext}')]
-            if not all_media_files: logging.info("✨ No media files found to process.")
+            # <<< CHANGE: Scan for all supported and sidecar files initially.
+            all_extensions = self.cfg.SUPPORTED_EXTENSIONS + self.cfg.SIDECAR_EXTENSIONS
+            all_files = [p for ext in all_extensions for p in source_dir.glob(f'**/*{ext}')]
+            
+            # <<< CHANGE: We only want to *process* the main media files, not the sidecars directly.
+            media_files_to_process = [f for f in all_files if f.suffix.lower() in self.cfg.SUPPORTED_EXTENSIONS]
+
+            if not media_files_to_process:
+                logging.info("✨ No primary media files found to process.")
             else:
-                logging.info(f"📂 Found {len(all_media_files)} media files to process.")
-                for file_path in all_media_files:
-                    if self.stop_event.is_set(): logging.warning("🛑 Sort run aborted by user."); break
+                logging.info(f"📂 Found {len(media_files_to_process)} primary media files to process.")
+                for file_path in media_files_to_process:
+                    if self.stop_event.is_set():
+                        logging.warning("🛑 Sort run aborted by user.")
+                        break
                     self.stats['processed'] += 1
-                    try: self.sort_item(file_path)
+                    try:
+                        self.sort_item(file_path)
                     except Exception as e:
-                        self.stats['errors'] += 1; logging.error(f"Fatal error on '{file_path.name}': {e}", exc_info=True)
-            if not self.stop_event.is_set(): self.cleanup_empty_dirs(source_dir)
+                        self.stats['errors'] += 1
+                        logging.error(f"Fatal error processing group for '{file_path.name}': {e}", exc_info=True)
+
+            if not self.stop_event.is_set():
+                self.cleanup_empty_dirs(source_dir)
+            
             self.print_summary()
         finally:
-            self.is_processing = False # <-- GUARANTEE FLAG IS UNSET
+            self.is_processing = False
 
     def cleanup_empty_dirs(self, path: Path):
         if self.dry: logging.info("Dry Run: Skipping cleanup of empty directories."); return
