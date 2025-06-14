@@ -111,29 +111,22 @@ class App(ctk.CTk):
         action_toggles_map = {'Movies': ('MOVIES_ENABLED', 'MOVIES_DIR'), 'TV Shows': ('TV_SHOWS_ENABLED', 'TV_SHOWS_DIR'), 'Anime Movies': ('ANIME_MOVIES_ENABLED', 'ANIME_MOVIES_DIR'), 'Anime Series': ('ANIME_SERIES_ENABLED', 'ANIME_SERIES_DIR'),}
         for i, (label, (enable_key, dir_key)) in enumerate(action_toggles_map.items()): ctk.CTkCheckBox(toggles_frame, text=label, variable=self.enabled_vars[enable_key], command=self.on_media_type_toggled).grid(row=0, column=i, padx=5, pady=5)
         ctk.CTkCheckBox(toggles_frame, text="French Mode", variable=self.fr_sauce_var, command=self._on_french_mode_toggled).grid(row=0, column=len(action_toggles_map), padx=5, pady=5)
-        
         fallback_frame = ctk.CTkFrame(parent, fg_color="transparent"); fallback_frame.grid(row=4, column=0, pady=5, sticky="ew")
         ctk.CTkLabel(fallback_frame, text="For mismatched shows, default to:").pack(side="left", padx=(5,10))
+        self.ignore_radio = ctk.CTkRadioButton(fallback_frame, text="Do Nothing", variable=self.fallback_var, value="ignore"); self.ignore_radio.pack(side="left", padx=5)
         self.mismatch_radio = ctk.CTkRadioButton(fallback_frame, text="Mismatched Folder", variable=self.fallback_var, value="mismatched"); self.mismatch_radio.pack(side="left", padx=5)
         self.tv_radio = ctk.CTkRadioButton(fallback_frame, text="TV Shows Folder", variable=self.fallback_var, value="tv"); self.tv_radio.pack(side="left", padx=5)
         self.anime_radio = ctk.CTkRadioButton(fallback_frame, text="Anime Series Folder", variable=self.fallback_var, value="anime"); self.anime_radio.pack(side="left", padx=5)
-        
         self.toggle_cleanup_mode_ui()
 
-    def on_media_type_toggled(self):
-        # Placeholder for check_and_prompt logic if needed, main purpose is to update fallback UI
-        self.update_fallback_ui_state()
-
+    def on_media_type_toggled(self): self.update_fallback_ui_state()
     def update_fallback_ui_state(self):
-        tv_enabled = self.enabled_vars['TV_SHOWS_ENABLED'].get()
-        anime_enabled = self.enabled_vars['ANIME_SERIES_ENABLED'].get()
+        tv_enabled = self.enabled_vars['TV_SHOWS_ENABLED'].get(); anime_enabled = self.enabled_vars['ANIME_SERIES_ENABLED'].get()
         self.tv_radio.configure(state="normal" if tv_enabled else "disabled")
         self.anime_radio.configure(state="normal" if anime_enabled else "disabled")
         if not tv_enabled and self.fallback_var.get() == "tv": self.fallback_var.set("mismatched")
         if not anime_enabled and self.fallback_var.get() == "anime": self.fallback_var.set("mismatched")
-
-    def _on_french_mode_toggled(self):
-        self.toggle_french_dir_visibility(); self.check_and_prompt_for_path('FRENCH_MOVIES_DIR', self.fr_sauce_var)
+    def _on_french_mode_toggled(self): self.toggle_french_dir_visibility(); self.check_and_prompt_for_path('FRENCH_MOVIES_DIR', self.fr_sauce_var)
     def check_and_prompt_for_path(self, dir_key: str, bool_var: ctk.BooleanVar):
         if bool_var.get() and dir_key in self.path_entries and not self.path_entries[dir_key].get().strip():
             logging.info(f"Path for {dir_key.replace('_', ' ').title()} is not set. Please select a folder.")
