@@ -59,7 +59,7 @@ class GuiLoggingHandler(logging.Handler):
     def emit(self, record):
         msg = self.format(record); tag = "INFO"
         if "🔵⚪🔴" in msg: tag = "FRENCH"
-        elif "DRY RUN:" in msg: tag = "DRYRUN"
+        elif "DRY RUN:" in msg or "Dry Run is ENABLED" in msg: tag = "DRYRUN"
         elif "✅" in msg or "Settings saved" in msg: tag = "SUCCESS"
         elif record.levelname == "WARNING": tag = "WARNING"
         elif record.levelname in ["ERROR", "CRITICAL"]: tag = "ERROR"
@@ -79,7 +79,6 @@ class App(ctk.CTk):
         super().__init__()
         self.title("SortMeDown Media Sorter"); self.geometry("900x800"); ctk.set_appearance_mode("Dark")
         
-        # <<< MODIFIED: All calls are now wrapped with str() to ensure compatibility
         try:
             if sys.platform == "win32":
                 self.iconbitmap(str(resource_path("icon.ico")))
@@ -90,7 +89,6 @@ class App(ctk.CTk):
             logging.warning(f"Could not set window icon: {e}")
             print(f"Error setting window icon: {e}. Make sure 'icon.ico' (Windows) or 'icon.png' (macOS/Linux) exists next to gui.py.")
         
-        # ... (rest of __init__ is unchanged)
         self.config = backend.Config.load(CONFIG_FILE)
         self.sorter_thread = None; self.sorter_instance = None; self.tray_icon = None; self.tab_view = None
         self.is_quitting = False; self.path_entries = {}; self.default_button_color = None; self.default_hover_color = None
@@ -113,10 +111,10 @@ class App(ctk.CTk):
         self.log_textbox.grid(row=1, column=0, padx=10, pady=(0,10), sticky="nsew")
         self.setup_logging(); self.protocol("WM_DELETE_WINDOW", self.quit_app); self.bind("<Unmap>", self.on_minimize); self.setup_tray_icon()
 
-    # ... (code between here and create_tray_image is unchanged)
     def setup_logging(self):
         log_handler = GuiLoggingHandler(self.log_textbox)
         log_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", "%H:%M:%S"))
+        # Using force=True to reconfigure the root logger for the GUI handler
         logging.basicConfig(level=logging.INFO, handlers=[log_handler], force=True)
         
     def create_controls(self):
@@ -269,23 +267,26 @@ class App(ctk.CTk):
             self.french_dir_entry.grid(row=french_row, column=1, padx=5, pady=5, sticky="ew")
             self.french_dir_browse.grid(row=french_row, column=2, padx=5, pady=5)
         else: self.french_dir_entry.grid_remove(); self.french_dir_browse.grid_remove()
+
     def on_api_key_type(self, event=None):
         if self.api_key_entry.cget("show") == "": self.api_key_entry.configure(show="*")
+
     def browse_folder(self, entry_widget):
         initial_dir = entry_widget.get() or str(Path.home())
         if folder_path := filedialog.askdirectory(initialdir=initial_dir):
             entry_widget.delete(0, ctk.END); entry_widget.insert(0, folder_path)
+
     def save_settings(self):
         self.update_config_from_ui()
         self.config.save(CONFIG_FILE)
         logging.info("✅ Settings saved to config.json")
         if self.tray_icon and not self.is_quitting:
             self.tray_icon.update_menu()
+
     def update_config_from_ui(self):
         for key, entry in self.path_entries.items(): setattr(self.config, key, entry.get())
         for key, var in self.enabled_vars.items(): setattr(self.config, key, var.get())
         if api_key := self.api_key_entry.get(): self.config.OMDB_API_KEY = api_key
-        # Corrected: Convert to set after splitting
         sidecar_text = self.sidecar_entry.get()
         self.config.SIDECAR_EXTENSIONS = {f".{ext.strip().lstrip('.')}" for ext in sidecar_text.split(',') if ext.strip()}
         custom_strings_text = self.custom_strings_entry.get()
@@ -294,34 +295,36 @@ class App(ctk.CTk):
         self.config.CLEANUP_MODE_ENABLED = self.cleanup_var.get()
         try: self.config.WATCH_INTERVAL = int(self.watch_interval_entry.get()) * 60
         except (ValueError, TypeError): self.config.WATCH_INTERVAL = 15 * 60
-def start_task(self, task_function, is_watcher=False):
+
+    def start_task(self, task_function, is_watcher=False):
         if self.is_quitting or (self.sorter_thread and self.sorter_thread.is_alive()): return
         
-        # --- LOGIC CORRECTED ---
-        # 1. Update config from UI first to get the current state of all checkboxes/entries.
         self.update_config_from_ui() 
         self.is_watching = is_watcher
         
-        # 2. Validate the config.
         is_valid, message = self.config.validate()
         if not is_valid:
             logging.error(f"Configuration error: {message}")
             return
 
-        # 3. Log status messages based on the now-current config.
         if self.config.FRENCH_MODE_ENABLED and not self.config.CLEANUP_MODE_ENABLED: logging.info("🔵⚪🔴 French Mode is ENABLED.")
         if self.config.CLEANUP_MODE_ENABLED: logging.info("🧹 Clean Up Mode is ENABLED.")
         if self.dry_run_var.get(): logging.info("🧪 Dry Run is ENABLED for this task.")
 
-        # 4. Create the sorter and start the thread.
         self.sorter_instance = backend.MediaSorter(self.config, dry=self.dry_run_var.get())
         self.sorter_thread = threading.Thread(target=task_function, args=(self.sorter_instance,), daemon=True)
         self.sorter_thread.start()
         self.monitor_active_task()
-    def start_sort_now(self): self.start_task(lambda sorter: sorter.process_source_directory(), is_watcher=False)
+
+    def start_sort_now(self):
+        self.start_task(lambda sorter: sorter.process_source_directory(), is_watcher=False)
+
     def toggle_watch_mode(self):
-        if self.sorter_thread and self.sorter_thread.is_alive(): self.stop_running_task()
-        else: self.start_task(lambda sorter: sorter.start_watch_mode(), is_watcher=True)
+        if self.sorter_thread and self.sorter_thread.is_alive():
+            self.stop_running_task()
+        else:
+            self.start_task(lambda sorter: sorter.start_watch_mode(), is_watcher=True)
+
     def monitor_active_task(self):
         if self.is_quitting: return
         is_running = self.sorter_thread and self.sorter_thread.is_alive()
@@ -343,7 +346,6 @@ def start_task(self, task_function, is_watcher=False):
             self.toggle_cleanup_mode_ui()
 
     def create_tray_image(self):
-        # <<< MODIFIED: Use str() here as well for maximum robustness
         try:
             return Image.open(str(resource_path("icon.png")))
         except Exception as e:
@@ -354,7 +356,6 @@ def start_task(self, task_function, is_watcher=False):
             dc.rectangle((0, height // 2, width // 2, height), fill=color2)
             return image
 
-    # ... (The rest of the file is unchanged)
     def quit_app(self):
         if self.is_quitting: return
         self.is_quitting = True; logging.info("Shutting down...")
@@ -362,19 +363,29 @@ def start_task(self, task_function, is_watcher=False):
         if self.sorter_instance: self.sorter_instance.signal_stop()
         if self.sorter_thread: self.sorter_thread.join(timeout=2)
         self.after(0, self._perform_safe_shutdown)
-    def _perform_safe_shutdown(self): self.save_settings(); self.destroy()
+
+    def _perform_safe_shutdown(self):
+        self.save_settings(); self.destroy()
+
     def show_window(self):
         self.deiconify(); self.lift(); self.attributes('-topmost', True)
         if self.tab_view: self.tab_view.set("Actions")
         self.after(100, lambda: self.attributes('-topmost', False))
-    def show_settings(self): self.show_window(); self.tab_view.set("Settings")
-    def hide_to_tray(self): self.withdraw(); self.tray_icon.notify('App is running in the background', 'SortMeDown')
+
+    def show_settings(self):
+        self.show_window(); self.tab_view.set("Settings")
+
+    def hide_to_tray(self):
+        self.withdraw(); self.tray_icon.notify('App is running in the background', 'SortMeDown')
+
     def on_minimize(self, event):
         if self.state() == 'iconic': self.hide_to_tray()
+
     def set_interval(self, minutes: int):
         logging.info(f"Watch interval set to {minutes} minutes.")
         self.watch_interval_entry.delete(0, ctk.END); self.watch_interval_entry.insert(0, str(minutes))
         self.save_settings() 
+
     def setup_tray_icon(self):
         image = self.create_tray_image()
         interval_menu = pystray.Menu(
