@@ -1,6 +1,6 @@
 ## Usage
 
-There are two primary ways to run the SortMeDown GUI.
+There are two primary ways to run the SortMeDown GUI for bangbang.py
 
 ### Option 1: Running from Source (with Python)
 
@@ -36,7 +36,7 @@ This method bundles the application and all its dependencies into a single file 
     ```
     your-project-folder/
     ├── gui.py
-    ├── bangbang_backend.py
+    ├── bangbang.py
     └── icon.ico  (for Windows) OR icon.icns (for macOS)
     ```
 
