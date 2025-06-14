@@ -4,7 +4,7 @@ SortMeDown Media Sorter - GUI (gui.py) for bang bang
 
 This file contains the Graphical User Interface for the SortMeDown media sorter.
 It is built using the CustomTkinter library and provides a user-friendly way
-to interact with the sorting logic defined in `bangbang_backend.py`.
+to interact with the sorting logic defined in `bangbang.py`.
 
 Major Feature Iterations: 
 -------------------------
@@ -37,7 +37,7 @@ import sys
 import tkinter
 import os
 
-import bangbang_backend as backend
+import bangbang as backend
 
 CONFIG_FILE = Path("config.json")
 
