@@ -1,462 +1,271 @@
-# bangbang.py
 """
-BangBang - Core Engine
-===============================
+SortMeDown Media Sorter - GUI (gui.py) for bang bang 
+================================
 
-This file contains the core, reusable logic for the SortMeDown media sorter.
-It is designed to be a self-contained "engine" that can be controlled by any
-frontend, such as a command-line interface (cli.py) or a graphical user 
-interface (gui.py).
+This file contains the Graphical User Interface for the SortMeDown media sorter.
+It is built using the CustomTkinter library and provides a user-friendly way
+to interact with the sorting logic defined in `bangbang.py`.
 
-This engine is UI-agnostic. It does not contain any `print` statements or
-argument parsing. It communicates its state and progress via `logging` and
-its public methods.
+Version 5.0
+Vastly improved inteligent sorting of missmatched item by the API
+will decide it it's a movie or a show, move to a mismatched folder or to a default dir tv or anime 
 """
 
-from pathlib import Path
-import re
-import shutil
-import requests
+import customtkinter as ctk
+from tkinter import filedialog
 import logging
 import threading
-from time import sleep
-from typing import Optional, Dict, Any, Set, List
-import json
-from dataclasses import dataclass
-from enum import Enum
-import os
+from pathlib import Path
+from PIL import Image, ImageDraw
+import pystray
 import sys
+import tkinter
+import os
 
-# --- Public Classes & Enums ---
+import bangbang as backend
 
-class MediaType(Enum):
-    MOVIE = "movie"; TV_SERIES = "series"; ANIME_MOVIE = "anime_movie"; ANIME_SERIES = "anime_series"; UNKNOWN = "unknown"
+CONFIG_FILE = Path("config.json")
 
-@dataclass
-class MediaInfo:
-    title: str; year: Optional[str]; media_type: MediaType; language: Optional[str]; genre: Optional[str]; season: Optional[int] = None
-    def get_folder_name(self) -> str:
-        if not self.title: return "Unknown"
-        folder_title = re.sub(r'[<>:"/\\|?*]', '', self.title).strip()
-        if self.year: return f"{folder_title} ({self.year})"
-        return folder_title
+def resource_path(relative_path):
+    try: base_path = Path(sys._MEIPASS)
+    except Exception: base_path = Path(__file__).parent.absolute()
+    return base_path / relative_path
 
-class Config:
+class GuiLoggingHandler(logging.Handler):
+    def __init__(self, text_widget):
+        super().__init__(); self.text_widget = text_widget
+        self.text_widget.tag_config("INFO", foreground="white"); self.text_widget.tag_config("DRYRUN", foreground="#00FFFF")
+        self.text_widget.tag_config("WARNING", foreground="orange"); self.text_widget.tag_config("ERROR", foreground="#FF5555")
+        self.text_widget.tag_config("SUCCESS", foreground="#00FF7F"); self.text_widget.tag_config("FRENCH", foreground="#6495ED")
+    def emit(self, record):
+        msg = self.format(record); tag = "INFO"
+        if "🔵⚪🔴" in msg: tag = "FRENCH"
+        elif "DRY RUN:" in msg or "Dry Run is ENABLED" in msg: tag = "DRYRUN"
+        elif "✅" in msg or "Settings saved" in msg: tag = "SUCCESS"
+        elif record.levelname == "WARNING": tag = "WARNING"
+        elif record.levelname in ["ERROR", "CRITICAL"]: tag = "ERROR"
+        def insert_text():
+            if self.text_widget.winfo_exists():
+                self.text_widget.configure(state="normal")
+                self.text_widget.insert(ctk.END, msg + '\n', tag)
+                self.text_widget.see(ctk.END)
+                self.text_widget.configure(state="disabled")
+        if hasattr(self.text_widget, 'after'):
+            try: self.text_widget.after(0, insert_text)
+            except Exception: pass
+
+class App(ctk.CTk):
     def __init__(self):
-        self.SOURCE_DIR = ""
-        self.MOVIES_DIR = ""
-        self.FRENCH_MOVIES_DIR = ""
-        self.TV_SHOWS_DIR = ""
-        self.ANIME_MOVIES_DIR = ""
-        self.ANIME_SERIES_DIR = ""
-        self.SUPPORTED_EXTENSIONS = {
-            '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v',
-            '.mpg', '.mpeg', '.3gp', '.ogv', '.ts', '.m2ts', '.mts'
+        super().__init__()
+        self.title("SortMeDown Media Sorter"); self.geometry("900x850"); ctk.set_appearance_mode("Dark")
+        try:
+            if sys.platform == "win32": self.iconbitmap(str(resource_path("icon.ico")))
+            else: self.iconphoto(True, tkinter.PhotoImage(file=str(resource_path("icon.png"))))
+        except Exception as e: logging.warning(f"Could not set window icon: {e}")
+        self.config = backend.Config.load(CONFIG_FILE)
+        self.sorter_thread = None; self.sorter_instance = None; self.tray_icon = None; self.tab_view = None
+        self.is_quitting = False; self.path_entries = {}; self.default_button_color = None; self.default_hover_color = None
+        self.is_watching = False 
+        self.enabled_vars = {
+            'MOVIES_ENABLED': ctk.BooleanVar(value=self.config.MOVIES_ENABLED),
+            'TV_SHOWS_ENABLED': ctk.BooleanVar(value=self.config.TV_SHOWS_ENABLED),
+            'ANIME_MOVIES_ENABLED': ctk.BooleanVar(value=self.config.ANIME_MOVIES_ENABLED),
+            'ANIME_SERIES_ENABLED': ctk.BooleanVar(value=self.config.ANIME_SERIES_ENABLED),
         }
-        self.SIDECAR_EXTENSIONS = {'.srt', '.sub', '.nfo', '.txt', '.jpg', '.png'}
-        self.CUSTOM_STRINGS_TO_REMOVE = {'FRENCH', 'TRUEFRENCH', 'VOSTFR', 'MULTI', 'SUBFRENCH'}
-        self.OMDB_API_KEY = "yourkey"
-        self.OMDB_URL = "http://www.omdbapi.com/"
-        self.ANILIST_URL = "https://graphql.anilist.co"
-        self.REQUEST_DELAY = 1.0
-        self.WATCH_INTERVAL = 15 * 60
-        self.FRENCH_MODE_ENABLED = False
-        self.MOVIES_ENABLED = True
-        self.TV_SHOWS_ENABLED = True
-        self.ANIME_MOVIES_ENABLED = True
-        self.ANIME_SERIES_ENABLED = True
-        self.CLEANUP_MODE_ENABLED = False # This replaces --cleanup-in-place
+        self.fr_sauce_var = ctk.BooleanVar(value=self.config.FRENCH_MODE_ENABLED)
+        self.dry_run_var = ctk.BooleanVar(value=False)
+        self.cleanup_var = ctk.BooleanVar(value=self.config.CLEANUP_MODE_ENABLED)
+        self.fallback_var = ctk.StringVar(value=self.config.FALLBACK_SHOW_DESTINATION)
+        self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(1, weight=1)
+        self.controls_frame = ctk.CTkFrame(self); self.controls_frame.grid(row=0, column=0, padx=10, pady=10, sticky="new")
+        self.create_controls()
+        self.log_textbox = ctk.CTkTextbox(self, state="disabled", font=("Courier New", 12))
+        self.log_textbox.grid(row=1, column=0, padx=10, pady=(0,10), sticky="nsew")
+        self.setup_logging(); self.protocol("WM_DELETE_WINDOW", self.quit_app); self.bind("<Unmap>", self.on_minimize); self.setup_tray_icon()
+        self.update_fallback_ui_state()
 
-    def get_path(self, key: str) -> Optional[Path]:
-        p = getattr(self, key)
-        return Path(p) if p else None
-
-    def to_dict(self):
-        # Convert sets to lists for JSON serialization
-        d = {}
-        for key, value in self.__dict__.items():
-            if not key.startswith('_'):
-                d[key] = list(value) if isinstance(value, set) else value
-        return d
-
-    @classmethod
-    def from_dict(cls, data):
-        config = cls()
-        for key, value in data.items():
-            if hasattr(config, key):
-                # Convert lists back to sets where appropriate
-                if isinstance(getattr(config, key), set):
-                    setattr(config, key, set(value))
-                else:
-                    setattr(config, key, value)
-        return config
-
-    def save(self, path: Path):
-        try:
-            with open(path, 'w') as f:
-                json.dump(self.to_dict(), f, indent=4)
-        except Exception as e:
-            logging.error(f"Failed to save config to '{path}': {e}")
-
-    @classmethod
-    def load(cls, path: Path):
-        if not path.exists():
-            return cls() # Return default config if file doesn't exist
-        try:
-            with open(path, 'r') as f:
-                content = f.read()
-                if not content.strip(): return cls()
-                return cls.from_dict(json.loads(content))
-        except (json.JSONDecodeError, Exception) as e:
-            logging.error(f"Error loading config from '{path}': {e}. Loading defaults.")
-            return cls()
-
-    def validate(self) -> (bool, str):
-        if not self.OMDB_API_KEY or self.OMDB_API_KEY == "yourkey":
-            return False, "OMDb API key is not configured."
-        source_dir = self.get_path('SOURCE_DIR')
-        if not source_dir or not source_dir.exists():
-            return False, f"Source directory not found or not set: {source_dir}"
-        return True, "Validation successful."
-
-# --- Helper function for UIs ---
-
-def setup_logging(log_file: Path, log_to_console: bool = False):
-    """Configures logging to a file and optionally to the console."""
-    handlers = [logging.FileHandler(log_file, encoding='utf-8')]
-    if log_to_console:
-        handlers.append(logging.StreamHandler(sys.stdout))
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=handlers
-    )
-
-# --- Core Logic Classes (Internal) ---
-
-class TitleCleaner:
-    METADATA_BREAKPOINT_PATTERN = re.compile(r'('r'\s[\(\[]?\d{4}[\)\]]?\b'r'|\s[Ss]\d{1,2}[Ee]\d{1,2}\b'r'|\s[Ss]\d{1,2}\b'r'|\sSeason\s\d{1,2}\b'r'|\s\d{3,4}p\b'r'|\s(WEBRip|BluRay|BDRip|DVDRip|HDRip|WEB-DL|HDTV)\b'r'|\s(x264|x265|H\.?264|H\.?265|HEVC|AVC)\b'r')', re.IGNORECASE)
-    @classmethod
-    def clean_for_search(cls, name: str, custom_strings_to_remove: Set[str]) -> str:
-        name_with_spaces = re.sub(r'[\._]', ' ', name)
-        temp_title = name_with_spaces
-        for s in custom_strings_to_remove: temp_title = re.sub(r'\b' + re.escape(s) + r'\b', ' ', temp_title, flags=re.IGNORECASE)
-        title_part = temp_title[:match.start()] if (match := cls.METADATA_BREAKPOINT_PATTERN.search(temp_title)) else temp_title
-        cleaned_title = re.sub(r'\[[^\]]+\]', '', title_part)
-        return re.sub(r'\s+', ' ', cleaned_title).strip()
-    @classmethod
-    def extract_season_info(cls, filename: str) -> Optional[int]:
-        for p in [r'[Ss](\d{1,2})[Ee]\d{1,2}', r'Season[ _-]?(\d{1,2})', r'[Ss](\d{1,2})']:
-            if m:=re.search(p, filename, re.IGNORECASE): return int(m.group(1))
-        return None
-
-class APIClient:
-    def __init__(self, config: Config):
-        self.config = config
-        self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'SortMeDown/Engine/4.0'})
-    def query_omdb(self, title: str) -> Optional[Dict[str, Any]]:
-        try:
-            for params in [{"t": title}, {"s": title}]:
-                full_params = {**params, "apikey": self.config.OMDB_API_KEY}
-                response = self.session.get(self.config.OMDB_URL, params=full_params, timeout=10)
-                response.raise_for_status(); data = response.json()
-                if data.get("Response") == "True":
-                    if "Search" in data:
-                        id_params = {"i": data["Search"][0]["imdbID"], "apikey": self.config.OMDB_API_KEY}
-                        id_response = self.session.get(self.config.OMDB_URL, params=id_params, timeout=10)
-                        return id_response.json()
-                    return data
-        except requests.RequestException as e: logging.error(f"OMDb API request failed for '{title}': {e}")
-        return None
-
-    def query_anilist(self, title: str) -> Optional[Dict[str, Any]]:
-        query = '''query ($search: String) { Media(search: $search, type: ANIME) { title { romaji english native } format, genres, season, seasonYear, episodes } }'''
-        try:
-            response = self.session.post(self.config.ANILIST_URL, json={"query": query, "variables": {"search": title}}, timeout=10)
-            response.raise_for_status()
-            media = response.json().get("data", {}).get("Media")
-            if media: logging.info(f"AniList found match for: {title}"); return media
-        except requests.RequestException as e: logging.error(f"AniList API request failed for '{title}': {e}")
-        return None
-
-class MediaClassifier:
-    def __init__(self, api_client: APIClient): self.api_client = api_client
-    def classify_media(self, name: str, custom_strings: Set[str]) -> MediaInfo:
-        clean_name = TitleCleaner.clean_for_search(name, custom_strings)
-        logging.info(f"Classifying: '{name}' -> Clean search: '{clean_name}'")
-        if not clean_name:
-            logging.warning(f"Could not extract a clean name from '{name}'. Skipping.")
-            return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
-        anilist_data = self.api_client.query_anilist(clean_name)
-        sleep(self.api_client.config.REQUEST_DELAY)
-        omdb_data = self.api_client.query_omdb(clean_name)
-        if anilist_data and omdb_data and "animation" not in omdb_data.get("Genre","").lower() and "japan" not in omdb_data.get("Country","").lower():
-             return self._classify_from_omdb(omdb_data)
-        if anilist_data: return self._classify_from_anilist(anilist_data)
-        if omdb_data: return self._classify_from_omdb(omdb_data)
-        logging.warning(f"No API results found for: {clean_name}")
-        return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
-    def _classify_from_anilist(self, data: Dict[str, Any]) -> MediaInfo:
-        f_type = data.get("format", "").upper()
-        m_type = MediaType.ANIME_MOVIE if f_type == "MOVIE" else MediaType.ANIME_SERIES if f_type in ["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"] else MediaType.UNKNOWN
-        title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji')
-        return MediaInfo(title=title, year=str(data.get("seasonYear", "")), media_type=m_type, language="Japanese", genre=", ".join(data.get("genres", [])))
-
-    def _classify_from_omdb(self, data: Dict[str, Any]) -> MediaInfo:
-        type_ = data.get("Type", "").lower()
-        m_type = MediaType.MOVIE if type_ == "movie" else MediaType.TV_SERIES if type_ in ["series", "tv series"] else MediaType.UNKNOWN
-        return MediaInfo(title=data.get("Title"), year=(data.get("Year", "") or "").split('–')[0], media_type=m_type, language=data.get("Language", ""), genre=data.get("Genre", ""))
-
-class FileManager:
-    def __init__(self, cfg: Config, dry_run: bool):
-        self.cfg, self.dry_run = cfg, dry_run
-
-    def _find_sidecar_files(self, primary_file: Path) -> List[Path]:
-        sidecars = []
-        stem = primary_file.stem
-        for sibling in primary_file.parent.iterdir():
-            if sibling != primary_file and sibling.stem == stem and sibling.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS:
-                sidecars.append(sibling)
-        return sidecars
-
-    def ensure_dir(self, p: Path) -> bool:
-        if not p: logging.error("Destination directory path is not set."); return False
-        if not p.exists():
-            if self.dry_run: logging.info(f"DRY RUN: Would create dir '{p}'")
-            else:
-                try: p.mkdir(parents=True, exist_ok=True)
-                except Exception as e: logging.error(f"Could not create directory '{p}': {e}"); return False
-        return True
-
-    def move_file_group(self, file_group: List[Path], dest_dir: Path) -> bool:
-        if not self.ensure_dir(dest_dir): return False
+    def setup_logging(self):
+        log_handler = GuiLoggingHandler(self.log_textbox)
+        log_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", "%H:%M:%S"))
+        logging.basicConfig(level=logging.INFO, handlers=[log_handler], force=True)
         
-        primary_file = file_group[0]
-        all_moved_successfully = True
+    def create_controls(self):
+        self.tab_view = ctk.CTkTabview(self.controls_frame); self.tab_view.pack(expand=True, fill="both", padx=5, pady=5)
+        self.create_actions_tab(self.tab_view.add("Actions")); self.create_settings_tab(self.tab_view.add("Settings"))
 
-        for file_to_move in file_group:
-            target = dest_dir / file_to_move.name
-            if str(file_to_move.resolve()) == str(target.resolve()):
-                logging.info(f"Skipping move: '{file_to_move.name}' is already in its correct location.")
-                continue
-            
-            if target.exists():
-                logging.warning(f"SKIPPED: File '{target.name}' already exists in '{dest_dir.name}'.")
-                continue
-
-            log_prefix = "DRY RUN:" if self.dry_run else "Moved"
-            if file_to_move != primary_file: log_prefix += " (sidecar)"
-            
-            logging.info(f"{log_prefix}: '{file_to_move.name}' -> '{dest_dir.name}'")
-
-            if not self.dry_run:
-                try:
-                    shutil.move(str(file_to_move), str(target))
-                except Exception as e:
-                    logging.error(f"ERROR moving file '{file_to_move.name}': {e}")
-                    all_moved_successfully = False
+    def create_actions_tab(self, parent):
+        parent.grid_columnconfigure(0, weight=1)
+        button_bar_frame = ctk.CTkFrame(parent, fg_color="transparent"); button_bar_frame.grid(row=0, column=0, sticky="ew")
+        button_bar_frame.grid_columnconfigure((0, 2), weight=1); button_bar_frame.grid_columnconfigure(1, weight=0)
+        self.sort_now_button = ctk.CTkButton(button_bar_frame, text="Sort Now", command=self.start_sort_now); self.sort_now_button.grid(row=0, column=0, padx=(0, 5), pady=10, sticky="ew")
+        self.default_button_color = self.sort_now_button.cget("fg_color"); self.default_hover_color = self.sort_now_button.cget("hover_color")
+        self.stop_button = ctk.CTkButton(button_bar_frame, text="", width=60, command=self.stop_running_task, fg_color="gray25", border_width=0, state="disabled"); self.stop_button.grid(row=0, column=1, padx=5, pady=10)
+        self.watch_button = ctk.CTkButton(button_bar_frame, text="Start Watching", command=self.toggle_watch_mode); self.watch_button.grid(row=0, column=2, padx=(5, 0), pady=10, sticky="ew")
+        options_frame = ctk.CTkFrame(parent, fg_color="transparent"); options_frame.grid(row=1, column=0, columnspan=3, sticky="ew")
+        options_frame.grid_columnconfigure((0,1), weight=1)
+        ctk.CTkCheckBox(options_frame, text="Dry Run", variable=self.dry_run_var).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        ctk.CTkCheckBox(options_frame, text="Clean Up Source (disables Watch & Fallback)", variable=self.cleanup_var, command=self.toggle_cleanup_mode_ui).grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        watch_interval_frame = ctk.CTkFrame(options_frame, fg_color="transparent"); watch_interval_frame.grid(row=0, column=1, padx=5, pady=5, sticky="e")
+        ctk.CTkLabel(watch_interval_frame, text="Check every").pack(side="left", padx=(0,5))
+        self.watch_interval_entry = ctk.CTkEntry(watch_interval_frame, width=40); self.watch_interval_entry.pack(side="left"); self.watch_interval_entry.insert(0, str(self.config.WATCH_INTERVAL // 60))
+        ctk.CTkLabel(watch_interval_frame, text="minutes").pack(side="left", padx=(5,0))
+        ctk.CTkFrame(parent, height=2, fg_color="gray25").grid(row=2, column=0, pady=(10, 5), sticky="ew")
+        toggles_frame = ctk.CTkFrame(parent, fg_color="transparent"); toggles_frame.grid(row=3, column=0, sticky="ew", pady=(0, 5)) 
+        toggles_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+        action_toggles_map = {'Movies': ('MOVIES_ENABLED', 'MOVIES_DIR'), 'TV Shows': ('TV_SHOWS_ENABLED', 'TV_SHOWS_DIR'), 'Anime Movies': ('ANIME_MOVIES_ENABLED', 'ANIME_MOVIES_DIR'), 'Anime Series': ('ANIME_SERIES_ENABLED', 'ANIME_SERIES_DIR'),}
+        for i, (label, (enable_key, dir_key)) in enumerate(action_toggles_map.items()): ctk.CTkCheckBox(toggles_frame, text=label, variable=self.enabled_vars[enable_key], command=self.on_media_type_toggled).grid(row=0, column=i, padx=5, pady=5)
+        ctk.CTkCheckBox(toggles_frame, text="French Mode", variable=self.fr_sauce_var, command=self._on_french_mode_toggled).grid(row=0, column=len(action_toggles_map), padx=5, pady=5)
         
-        return all_moved_successfully
-
-class DirectoryWatcher:
-    def __init__(self, config: Config):
-        self.config = config
-        self.last_mtime = 0
-        self._scan()
-    def _scan(self):
-        if (source_dir := self.config.get_path('SOURCE_DIR')) and source_dir.exists():
-            self.last_mtime = source_dir.stat().st_mtime
-    def check_for_changes(self) -> bool:
-        if (source_dir := self.config.get_path('SOURCE_DIR')) and source_dir.exists():
-            mtime = source_dir.stat().st_mtime
-            if mtime > self.last_mtime:
-                self.last_mtime = mtime
-                return True
-        return False
-
-# --- Public Controller Class ---
-
-class MediaSorter:
-    def __init__(self, cfg: Config, dry_run: bool = False):
-        self.cfg = cfg
-        self.dry_run = dry_run
-        self.api_client = APIClient(cfg)
-        self.classifier = MediaClassifier(self.api_client)
-        self.fm = FileManager(cfg, self.dry_run)
-        self.stats = {}
-        self.stop_event = threading.Event()
-        self.is_processing = False
-        self._watcher_thread = None
-
-    def signal_stop(self):
-        """Safely signals any running process (sort or watch) to stop."""
-        self.stop_event.set()
-        logging.info("Stop signal received. Finishing current item...")
-
-    def ensure_target_dirs(self) -> bool:
-        if self.cfg.CLEANUP_MODE_ENABLED: return True
-        dirs_to_check = []
-        if self.cfg.MOVIES_ENABLED: dirs_to_check.append(self.cfg.get_path('MOVIES_DIR'))
-        if self.cfg.TV_SHOWS_ENABLED: dirs_to_check.append(self.cfg.get_path('TV_SHOWS_DIR'))
-        if self.cfg.ANIME_MOVIES_ENABLED: dirs_to_check.append(self.cfg.get_path('ANIME_MOVIES_DIR'))
-        if self.cfg.ANIME_SERIES_ENABLED: dirs_to_check.append(self.cfg.get_path('ANIME_SERIES_DIR'))
-        if self.cfg.FRENCH_MODE_ENABLED: dirs_to_check.append(self.cfg.get_path('FRENCH_MOVIES_DIR'))
-        return all(self.fm.ensure_dir(d) for d in dirs_to_check if d)
-
-    def sort_item(self, item: Path):
-        # We only process primary media files. Sidecars are handled with them.
-        if item.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS:
-            return
-
-        name_to_classify = item.parent.name if item.parent != self.cfg.get_path('SOURCE_DIR') else item.stem
-        info = self.classifier.classify_media(name_to_classify, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+        fallback_frame = ctk.CTkFrame(parent, fg_color="transparent"); fallback_frame.grid(row=4, column=0, pady=5, sticky="ew")
+        ctk.CTkLabel(fallback_frame, text="For mismatched shows, default to:").pack(side="left", padx=(5,10))
+        self.mismatch_radio = ctk.CTkRadioButton(fallback_frame, text="Mismatched Folder", variable=self.fallback_var, value="mismatched"); self.mismatch_radio.pack(side="left", padx=5)
+        self.tv_radio = ctk.CTkRadioButton(fallback_frame, text="TV Shows Folder", variable=self.fallback_var, value="tv"); self.tv_radio.pack(side="left", padx=5)
+        self.anime_radio = ctk.CTkRadioButton(fallback_frame, text="Anime Series Folder", variable=self.fallback_var, value="anime"); self.anime_radio.pack(side="left", padx=5)
         
-        files_to_move = [item] + self.fm._find_sidecar_files(item)
-        log_msg = f"Class: {info.media_type.value} | Title: '{info.get_folder_name()}'"
-        if len(files_to_move) > 1:
-            log_msg += f" | Found {len(files_to_move) - 1} sidecar file(s)."
-        logging.info(log_msg)
+        self.toggle_cleanup_mode_ui()
 
-        s, m_type = self.stats, info.media_type
-        if m_type == MediaType.UNKNOWN: s['unknown'] += 1; return
+    def on_media_type_toggled(self):
+        # Placeholder for check_and_prompt logic if needed, main purpose is to update fallback UI
+        self.update_fallback_ui_state()
 
-        # Check if this media type is enabled in config
-        type_enabled_map = {
-            MediaType.MOVIE: self.cfg.MOVIES_ENABLED,
-            MediaType.TV_SERIES: self.cfg.TV_SHOWS_ENABLED,
-            MediaType.ANIME_MOVIE: self.cfg.ANIME_MOVIES_ENABLED,
-            MediaType.ANIME_SERIES: self.cfg.ANIME_SERIES_ENABLED,
-        }
-        if not type_enabled_map.get(m_type, True):
-            logging.info(f"Skipping {m_type.value} sort (disabled in config).")
-            return
+    def update_fallback_ui_state(self):
+        tv_enabled = self.enabled_vars['TV_SHOWS_ENABLED'].get()
+        anime_enabled = self.enabled_vars['ANIME_SERIES_ENABLED'].get()
+        self.tv_radio.configure(state="normal" if tv_enabled else "disabled")
+        self.anime_radio.configure(state="normal" if anime_enabled else "disabled")
+        if not tv_enabled and self.fallback_var.get() == "tv": self.fallback_var.set("mismatched")
+        if not anime_enabled and self.fallback_var.get() == "anime": self.fallback_var.set("mismatched")
 
-        base_dir = None
-        if self.cfg.CLEANUP_MODE_ENABLED:
-            base_dir = self.cfg.get_path('SOURCE_DIR')
+    def _on_french_mode_toggled(self):
+        self.toggle_french_dir_visibility(); self.check_and_prompt_for_path('FRENCH_MOVIES_DIR', self.fr_sauce_var)
+    def check_and_prompt_for_path(self, dir_key: str, bool_var: ctk.BooleanVar):
+        if bool_var.get() and dir_key in self.path_entries and not self.path_entries[dir_key].get().strip():
+            logging.info(f"Path for {dir_key.replace('_', ' ').title()} is not set. Please select a folder.")
+            self.browse_folder(self.path_entries[dir_key])
+            if not self.path_entries[dir_key].get().strip(): logging.warning(f"No folder selected. Disabling feature."); bool_var.set(False)
+    def stop_running_task(self):
+        if self.sorter_instance: logging.warning("🛑 User initiated stop..."); self.sorter_instance.signal_stop()
+        if self.is_watching: self.is_watching = False
+    def toggle_cleanup_mode_ui(self):
+        is_running = self.sorter_thread and self.sorter_thread.is_alive()
+        if self.cleanup_var.get():
+            self.sort_now_button.configure(text="Clean Up Source Directory", fg_color="#2E7D32", hover_color="#1B5E20"); self.watch_button.configure(state="disabled")
         else:
-            dir_map = {
-                MediaType.MOVIE: self.cfg.get_path('MOVIES_DIR'),
-                MediaType.TV_SERIES: self.cfg.get_path('TV_SHOWS_DIR'),
-                MediaType.ANIME_MOVIE: self.cfg.get_path('ANIME_MOVIES_DIR'),
-                MediaType.ANIME_SERIES: self.cfg.get_path('ANIME_SERIES_DIR'),
-            }
-            base_dir = dir_map.get(m_type)
-        
-        if m_type == MediaType.MOVIE and self.cfg.FRENCH_MODE_ENABLED and "french" in (info.language or "").lower():
-            if not self.cfg.CLEANUP_MODE_ENABLED:
-                base_dir = self.cfg.get_path('FRENCH_MOVIES_DIR')
-        
-        if not base_dir:
-            logging.error(f"Target directory for {m_type.value} is not set."); s['errors'] += 1; return
+            self.sort_now_button.configure(text="Sort Now", fg_color=self.default_button_color, hover_color=self.default_hover_color)
+            if not is_running: self.watch_button.configure(state="normal")
+    def _create_path_entry_row(self, parent, row, dir_key, label_text):
+        ctk.CTkLabel(parent, text=label_text).grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        entry = ctk.CTkEntry(parent, width=400); entry.grid(row=row, column=1, padx=5, pady=5, sticky="ew")
+        entry.insert(0, getattr(self.config, dir_key, "")); self.path_entries[dir_key] = entry
+        ctk.CTkButton(parent, text="Browse...", width=80, command=lambda e=entry: self.browse_folder(e)).grid(row=row, column=2, padx=5, pady=5)
+        return row + 1
+    def create_settings_tab(self, parent):
+        parent.grid_columnconfigure(1, weight=1); self.path_entries = {}
+        path_map = {'SOURCE_DIR': 'Source Directory', 'MOVIES_DIR': 'Movies Directory', 'TV_SHOWS_DIR': 'TV Shows Directory', 'ANIME_MOVIES_DIR': 'Anime Movies Directory', 'ANIME_SERIES_DIR': 'Anime Series Directory', 'MISMATCHED_DIR': 'Mismatched Files Directory'}
+        row = 0
+        for key, label in path_map.items(): row = self._create_path_entry_row(parent, row, key, label)
+        self.fr_check = ctk.CTkCheckBox(parent, text="French Movies Directory", variable=self.fr_sauce_var, command=self._on_french_mode_toggled); self.fr_check.grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        self.french_dir_entry = ctk.CTkEntry(parent, width=400); self.french_dir_entry.insert(0, getattr(self.config, "FRENCH_MOVIES_DIR", "")); self.path_entries["FRENCH_MOVIES_DIR"] = self.french_dir_entry
+        self.french_dir_browse = ctk.CTkButton(parent, text="Browse...", width=80, command=lambda e=self.french_dir_entry: self.browse_folder(e))
+        self.toggle_french_dir_visibility(); row += 1
+        ctk.CTkLabel(parent, text="Sidecar Extensions").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        self.sidecar_entry = ctk.CTkEntry(parent, placeholder_text=".srt, .nfo, .txt"); self.sidecar_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
+        if self.config.SIDECAR_EXTENSIONS: self.sidecar_entry.insert(0, ", ".join(self.config.SIDECAR_EXTENSIONS))
+        row += 1
+        ctk.CTkLabel(parent, text="Custom Strings to Remove").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        self.custom_strings_entry = ctk.CTkEntry(parent, placeholder_text="FRENCH, VOSTFR"); self.custom_strings_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
+        if self.config.CUSTOM_STRINGS_TO_REMOVE: self.custom_strings_entry.insert(0, ", ".join(self.config.CUSTOM_STRINGS_TO_REMOVE))
+        row += 1
+        ctk.CTkLabel(parent, text="OMDb API Key").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        self.api_key_entry = ctk.CTkEntry(parent, placeholder_text="Enter API key"); self.api_key_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
+        if self.config.OMDB_API_KEY and self.config.OMDB_API_KEY != "yourkey": self.api_key_entry.insert(0, self.config.OMDB_API_KEY); self.api_key_entry.configure(show="*")
+        self.api_key_entry.bind("<Key>", lambda e: self.api_key_entry.configure(show="*")); row += 1
+        ctk.CTkButton(parent, text="Save Settings", command=self.save_settings).grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="e")
+    def toggle_french_dir_visibility(self):
+        row = 6
+        if self.fr_sauce_var.get(): self.french_dir_entry.grid(row=row, column=1, padx=5, pady=5, sticky="ew"); self.french_dir_browse.grid(row=row, column=2, padx=5, pady=5)
+        else: self.french_dir_entry.grid_remove(); self.french_dir_browse.grid_remove()
+    def browse_folder(self, entry_widget):
+        if folder_path := filedialog.askdirectory(initialdir=entry_widget.get() or str(Path.home())): entry_widget.delete(0, ctk.END); entry_widget.insert(0, folder_path)
+    def save_settings(self): self.update_config_from_ui(); self.config.save(CONFIG_FILE); logging.info("✅ Settings saved to config.json"); self.tray_icon.update_menu()
+    def update_config_from_ui(self):
+        for key, entry in self.path_entries.items(): setattr(self.config, key, entry.get())
+        for key, var in self.enabled_vars.items(): setattr(self.config, key, var.get())
+        if api_key := self.api_key_entry.get(): self.config.OMDB_API_KEY = api_key
+        self.config.SIDECAR_EXTENSIONS = {f".{ext.strip().lstrip('.')}" for ext in self.sidecar_entry.get().split(',') if ext.strip()}
+        self.config.CUSTOM_STRINGS_TO_REMOVE = {s.strip().upper() for s in self.custom_strings_entry.get().split(',') if s.strip()}
+        self.config.FRENCH_MODE_ENABLED = self.fr_sauce_var.get()
+        self.config.CLEANUP_MODE_ENABLED = self.cleanup_var.get()
+        self.config.FALLBACK_SHOW_DESTINATION = self.fallback_var.get()
+        try: self.config.WATCH_INTERVAL = int(self.watch_interval_entry.get()) * 60
+        except (ValueError, TypeError): self.config.WATCH_INTERVAL = 15 * 60
+    def start_task(self, task_function, is_watcher=False):
+        if self.is_quitting or (self.sorter_thread and self.sorter_thread.is_alive()): return
+        self.update_config_from_ui(); self.is_watching = is_watcher
+        is_valid, message = self.config.validate()
+        if not is_valid: logging.error(f"Configuration error: {message}"); return
+        if self.config.FRENCH_MODE_ENABLED and not self.config.CLEANUP_MODE_ENABLED: logging.info("🔵⚪🔴 French Mode is ENABLED.")
+        if self.config.CLEANUP_MODE_ENABLED: logging.info("🧹 Clean Up Mode is ENABLED.")
+        if self.dry_run_var.get(): logging.info("🧪 Dry Run is ENABLED for this task.")
+        self.sorter_instance = backend.MediaSorter(self.config, dry_run=self.dry_run_var.get())
+        self.sorter_thread = threading.Thread(target=task_function, args=(self.sorter_instance,), daemon=True)
+        self.sorter_thread.start(); self.monitor_active_task()
+    def start_sort_now(self): self.start_task(lambda sorter: sorter.process_source_directory(), is_watcher=False)
+    def toggle_watch_mode(self):
+        if self.sorter_thread and self.sorter_thread.is_alive(): self.stop_running_task()
+        else: self.start_task(lambda sorter: sorter.start_watch_mode(), is_watcher=True)
+    def monitor_active_task(self):
+        if self.is_quitting: return
+        is_running = self.sorter_thread and self.sorter_thread.is_alive()
+        if is_running:
+            self.sort_now_button.configure(state="disabled")
+            self.watch_button.configure(text="Stop Watching" if self.is_watching else "Running...", state="normal" if self.is_watching else "disabled")
+            if self.sorter_instance and self.sorter_instance.is_processing: self.stop_button.configure(state="normal", text="STOP", fg_color="#D32F2F", hover_color="#B71C1C")
+            elif self.is_watching: self.stop_button.configure(state="disabled", text="IDLE", fg_color="#FBC02D", text_color="black")
+            self.after(500, self.monitor_active_task)
+        else:
+            if self.is_watching: logging.info("✅ Watcher stopped.")
+            else: logging.info("✅ Task finished.")
+            self.sort_now_button.configure(state="normal"); self.watch_button.configure(text="Start Watching", state="normal")
+            self.stop_button.configure(state="disabled", text="", fg_color="gray25")
+            self.sorter_instance = None; self.sorter_thread = None; self.is_watching = False
+            self.tray_icon.update_menu(); self.toggle_cleanup_mode_ui()
+    def create_tray_image(self):
+        try: return Image.open(str(resource_path("icon.png")))
+        except Exception:
+            image = Image.new('RGB', (64, 64), "#1F6AA5"); dc = ImageDraw.Draw(image)
+            dc.rectangle((32, 0, 64, 32), fill="#144870"); dc.rectangle((0, 32, 32, 64), fill="#144870")
+            return image
+    def quit_app(self):
+        if self.is_quitting: return
+        self.is_quitting = True; logging.info("Shutting down...")
+        self.tray_icon.stop()
+        if self.sorter_instance: self.sorter_instance.signal_stop()
+        if self.sorter_thread: self.sorter_thread.join(timeout=2)
+        self.after(0, self._perform_safe_shutdown)
+    def _perform_safe_shutdown(self): self.save_settings(); self.destroy()
+    def show_window(self): self.deiconify(); self.lift(); self.attributes('-topmost', True); self.tab_view.set("Actions"); self.after(100, lambda: self.attributes('-topmost', False))
+    def show_settings(self): self.show_window(); self.tab_view.set("Settings")
+    def hide_to_tray(self): self.withdraw(); self.tray_icon.notify('App is running in the background', 'SortMeDown')
+    def on_minimize(self, event):
+        if self.state() == 'iconic': self.hide_to_tray()
+    def set_interval(self, minutes: int):
+        logging.info(f"Watch interval set to {minutes} minutes.")
+        self.watch_interval_entry.delete(0, ctk.END); self.watch_interval_entry.insert(0, str(minutes)); self.save_settings() 
+    def setup_tray_icon(self):
+        image = self.create_tray_image()
+        menu = (
+            pystray.MenuItem('Show', self.show_window, default=True), pystray.MenuItem('Settings', self.show_settings), pystray.Menu.SEPARATOR,
+            pystray.MenuItem('Enable Watch', self.toggle_watch_mode, checked=lambda item: self.is_watching),
+            pystray.MenuItem('Set Interval', pystray.Menu(
+                pystray.MenuItem('5 minutes', lambda: self.set_interval(5), radio=True, checked=lambda i: self.config.WATCH_INTERVAL == 300),
+                pystray.MenuItem('15 minutes', lambda: self.set_interval(15), radio=True, checked=lambda i: self.config.WATCH_INTERVAL == 900),
+                pystray.MenuItem('30 minutes', lambda: self.set_interval(30), radio=True, checked=lambda i: self.config.WATCH_INTERVAL == 1800),
+                pystray.MenuItem('60 minutes', lambda: self.set_interval(60), radio=True, checked=lambda i: self.config.WATCH_INTERVAL == 3600))),
+            pystray.Menu.SEPARATOR, pystray.MenuItem('Quit', self.quit_app)
+        )
+        self.tray_icon = pystray.Icon("sortmedown", image, "SortMeDown Sorter", menu); threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
-        if m_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]:
-            key = 'anime_movies' if m_type == MediaType.ANIME_MOVIE else 'french_movies' if base_dir == self.cfg.get_path('FRENCH_MOVIES_DIR') else 'movies'
-            dest_folder = base_dir / info.get_folder_name()
-            if self.fm.move_file_group(files_to_move, dest_folder): s[key] += 1
-            else: s['errors'] += 1
-        
-        elif m_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
-            key = 'anime_series' if m_type == MediaType.ANIME_SERIES else 'tv'
-            season = TitleCleaner.extract_season_info(item.name) or 1
-            season_dir = base_dir / info.get_folder_name() / f"Season {season:02d}"
-            if self.fm.move_file_group(files_to_move, season_dir): s[key] += 1
-            else: s['errors'] += 1
-
-    def process_source_directory(self):
-        self.is_processing = True
-        try:
-            self.stop_event.clear()
-            self.stats = {k: 0 for k in ['processed','movies','tv','anime_movies','anime_series','french_movies','unknown','errors']}
-            source_dir = self.cfg.get_path('SOURCE_DIR')
-
-            if not source_dir or not source_dir.exists() or not self.ensure_target_dirs():
-                logging.error("Source/Target directory validation failed."); return
-            
-            logging.info("Starting deep scan of source directory...")
-            all_extensions = self.cfg.SUPPORTED_EXTENSIONS.union(self.cfg.SIDECAR_EXTENSIONS)
-            all_files_found = [p for ext in all_extensions for p in source_dir.glob(f'**/*{ext}') if p.is_file()]
-            media_files_to_process = [f for f in all_files_found if f.suffix.lower() in self.cfg.SUPPORTED_EXTENSIONS]
-            
-            if not media_files_to_process:
-                logging.info("No primary media files found to process.")
-            else:
-                logging.info(f"Found {len(media_files_to_process)} primary media files to process.")
-                for file_path in media_files_to_process:
-                    if self.stop_event.is_set():
-                        logging.warning("Sort run aborted by user.")
-                        break
-                    self.stats['processed'] += 1
-                    try:
-                        self.sort_item(file_path)
-                    except Exception as e:
-                        self.stats['errors'] += 1
-                        logging.error(f"Fatal error processing '{file_path.name}': {e}", exc_info=True)
-            
-            if not self.stop_event.is_set():
-                self.cleanup_empty_dirs(source_dir)
-            
-            self.log_summary()
-        finally:
-            self.is_processing = False
-
-    def cleanup_empty_dirs(self, path: Path):
-        if self.dry_run:
-            logging.info("DRY RUN: Skipping cleanup of empty directories.")
-            return
-        logging.info("Sweeping for empty directories...")
-        for dirpath, _, _ in os.walk(path, topdown=False):
-            if Path(dirpath).resolve() == path.resolve(): continue
-            try:
-                if not os.listdir(dirpath):
-                    os.rmdir(dirpath)
-                    logging.info(f"Removed empty directory: {dirpath}")
-            except OSError as e:
-                logging.error(f"Error removing directory {dirpath}: {e}")
-
-    def start_watch_mode(self):
-        """Starts the watch mode loop in a separate thread."""
-        if self._watcher_thread and self._watcher_thread.is_alive():
-            logging.warning("Watch mode is already running.")
-            return
-
-        if self.cfg.CLEANUP_MODE_ENABLED:
-            logging.error("FATAL: Watch mode cannot be started when 'Clean Up In Place' mode is enabled.")
-            logging.error("This combination is unsafe. Please disable 'Clean Up In Place' to use watch mode.")
-            return
-
-        def _watch_loop():
-            self.is_processing = True
-            logging.info("Watch mode started. Press Ctrl+C in the terminal to stop.")
-            # Initial sort
-            logging.info("Performing initial sort...")
-            self.process_source_directory()
-            
-            watcher = DirectoryWatcher(self.cfg)
-            logging.info(f"Initial sort complete. Now watching for changes every {self.cfg.WATCH_INTERVAL // 60} minutes.")
-            
-            while not self.stop_event.is_set():
-                if watcher.check_for_changes():
-                    logging.info("Changes detected! Starting new sort...")
-                    self.process_source_directory()
-                    logging.info("Processing complete. Resuming watch.")
-                
-                # Wait for the interval, but break immediately if stop is signaled
-                if self.stop_event.wait(timeout=self.cfg.WATCH_INTERVAL):
-                    break
-            
-            logging.info("Watch mode stopped.")
-            self.is_processing = False
-
-        self.stop_event.clear()
-        self._watcher_thread = threading.Thread(target=_watch_loop, daemon=True)
-        self._watcher_thread.start()
-
-    def log_summary(self):
-        summary = f"\n\n--- PROCESSING SUMMARY ---\n"
-        for k, v in self.stats.items():
-            summary += f"{k.replace('_',' ').title():<15}: {v}\n"
-        summary += f"--------------------------\n"
-        logging.info(summary)
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
