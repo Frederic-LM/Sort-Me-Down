@@ -12,6 +12,7 @@ core logic from `bangbang.py`.
 
 import argparse
 import sys
+import logging  # <-- THIS WAS THE MISSING LINE
 from pathlib import Path
 
 # Import the shared engine components
