@@ -114,7 +114,6 @@ class App(ctk.CTk):
     def setup_logging(self):
         log_handler = GuiLoggingHandler(self.log_textbox)
         log_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", "%H:%M:%S"))
-        # Using force=True to reconfigure the root logger for the GUI handler
         logging.basicConfig(level=logging.INFO, handlers=[log_handler], force=True)
         
     def create_controls(self):
@@ -311,7 +310,8 @@ class App(ctk.CTk):
         if self.config.CLEANUP_MODE_ENABLED: logging.info("🧹 Clean Up Mode is ENABLED.")
         if self.dry_run_var.get(): logging.info("🧪 Dry Run is ENABLED for this task.")
 
-        self.sorter_instance = backend.MediaSorter(self.config, dry=self.dry_run_var.get())
+        self.sorter_instance = backend.MediaSorter(self.config, dry_run=self.dry_run_var.get())
+        
         self.sorter_thread = threading.Thread(target=task_function, args=(self.sorter_instance,), daemon=True)
         self.sorter_thread.start()
         self.monitor_active_task()
