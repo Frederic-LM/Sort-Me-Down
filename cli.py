@@ -1,13 +1,81 @@
 #!/usr/bin/env python3
 # cli.py
-
 """
-SortMeDown - Command-Line Interface (v4.2.0)
+SortMeDown - Command-Line Interface (v4.9.0)
 ============================================
 
 This script provides a command-line interface to the SortMeDown engine.
 It handles user input, displays progress in the console, and calls the
 core logic from `bangbang.py`.
+
+--------------------
+COMMAND-LINE OPTIONS
+--------------------
+
+All command-line flags are optional and are used to override the settings 
+found in `config.json` for a single run.
+
+--help
+    Show the help message and exit.
+
+--version
+    Show the program's version number and exit.
+
+--config [PATH]
+    Specifies the path to the configuration file.
+    Default: `config.json` in the same directory as the script.
+    Example: python cli.py --config /path/to/my/custom_config.json
+
+--dry-run
+    Perform a "dry run" of the sorting process. The script will log all
+    actions it *would* have taken (classifying, creating folders, moving
+    files) without actually modifying the filesystem. This is highly
+    recommended for the first run to ensure your paths are correct.
+
+--watch
+    Enable "watch mode." After an initial sort of the source directory,
+    the script will remain active and monitor the directory for new files,
+    processing them as they are added. This is mutually exclusive with
+   `--cleanup-in-place`.
+
+--watch-interval [MINUTES]
+    Override the watch interval defined in the config file.
+    Example: python cli.py --watch --watch-interval 5
+             (Checks for new files every 5 minutes)
+
+--cleanup-in-place
+    Enable "cleanup mode." Instead of moving files to separate library
+    directories, this mode organizes files *within* the source directory.
+    It will create subfolders for shows/movies inside the source directory
+    and move the files there. This is useful for tidying up a single large
+    download folder. This mode is mutually exclusive with `--watch`.
+
+--fr
+    Enable "French mode" for this run. If a movie is identified as being
+    in French, it will be moved to the `FRENCH_MOVIES_DIR` instead of the
+    standard `MOVIES_DIR`.
+
+--mismatched-dir [PATH]
+    Override the `MISMATCHED_DIR` setting from the config file. This is
+    the folder where files with conflicting metadata (e.g., year mismatch)
+    are sent for manual review.
+    Example: python cli.py --mismatched-dir "C:/Sorting/Review"
+
+--fallback [choice]
+    Override the fallback behavior for shows that have conflicting metadata.
+    This is for files that look like a series (e.g., S01E01) but the API
+    returns a movie, or for shows where no API data is found at all.
+
+    Available choices:
+      - ignore:     Leave the file where it is. Do not move it.
+      - mismatched: Move the file to the "Mismatched" directory. (Default)
+      - tv:         Assume it's a regular TV show and move it to the
+                    TV Shows library.
+      - anime:      Assume it's an anime series and move it to the
+                    Anime Series library.
+    
+    Example: python cli.py --fallback tv
+
 """
 
 import argparse
