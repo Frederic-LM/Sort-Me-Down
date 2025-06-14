@@ -376,6 +376,7 @@ class MediaSorter:
             self.stats = {k: 0 for k in ['processed','movies','tv','anime_movies','anime_series','french_movies','unknown','errors']}
             source_dir = self.cfg.get_path('SOURCE_DIR')
 
+            # --- No change here, validation is fine for a single run ---
             if not source_dir or not source_dir.exists() or not self.ensure_target_dirs():
                 logging.error("Source/Target directory validation failed."); return
             
@@ -425,6 +426,13 @@ class MediaSorter:
         if self._watcher_thread and self._watcher_thread.is_alive():
             logging.warning("Watch mode is already running.")
             return
+        # --- ADDED: Engine-level validation ---
+        # The engine now enforces that watch mode and cleanup mode are mutually exclusive.
+        if self.cfg.CLEANUP_MODE_ENABLED:
+            logging.error("FATAL: Watch mode cannot be started when 'Clean Up In Place' mode is enabled.")
+            logging.error("This combination is unsafe. Please disable 'Clean Up In Place' to use watch mode.")
+            return
+        # --- END ADDITION ---
 
         def _watch_loop():
             self.is_processing = True
