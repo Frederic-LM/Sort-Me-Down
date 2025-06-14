@@ -157,7 +157,6 @@ class APIClient:
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': 'SortMeDown/Engine/4.0'})
     def query_omdb(self, title: str) -> Optional[Dict[str, Any]]:
-        # ... (Identical to backend version, no changes needed)
         try:
             for params in [{"t": title}, {"s": title}]:
                 full_params = {**params, "apikey": self.config.OMDB_API_KEY}
@@ -173,7 +172,6 @@ class APIClient:
         return None
 
     def query_anilist(self, title: str) -> Optional[Dict[str, Any]]:
-        # ... (Identical to backend version, no changes needed)
         query = '''query ($search: String) { Media(search: $search, type: ANIME) { title { romaji english native } format, genres, season, seasonYear, episodes } }'''
         try:
             response = self.session.post(self.config.ANILIST_URL, json={"query": query, "variables": {"search": title}}, timeout=10)
@@ -186,7 +184,6 @@ class APIClient:
 class MediaClassifier:
     def __init__(self, api_client: APIClient): self.api_client = api_client
     def classify_media(self, name: str, custom_strings: Set[str]) -> MediaInfo:
-        # ... (Identical to backend version, no changes needed)
         clean_name = TitleCleaner.clean_for_search(name, custom_strings)
         logging.info(f"Classifying: '{name}' -> Clean search: '{clean_name}'")
         if not clean_name:
@@ -202,20 +199,20 @@ class MediaClassifier:
         logging.warning(f"No API results found for: {clean_name}")
         return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
     def _classify_from_anilist(self, data: Dict[str, Any]) -> MediaInfo:
-        # ... (Identical to backend version, no changes needed)
         f_type = data.get("format", "").upper()
         m_type = MediaType.ANIME_MOVIE if f_type == "MOVIE" else MediaType.ANIME_SERIES if f_type in ["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"] else MediaType.UNKNOWN
         title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji')
         return MediaInfo(title=title, year=str(data.get("seasonYear", "")), media_type=m_type, language="Japanese", genre=", ".join(data.get("genres", [])))
 
     def _classify_from_omdb(self, data: Dict[str, Any]) -> MediaInfo:
-        # ... (Identical to backend version, no changes needed)
         type_ = data.get("Type", "").lower()
         m_type = MediaType.MOVIE if type_ == "movie" else MediaType.TV_SERIES if type_ in ["series", "tv series"] else MediaType.UNKNOWN
         return MediaInfo(title=data.get("Title"), year=(data.get("Year", "") or "").split('–')[0], media_type=m_type, language=data.get("Language", ""), genre=data.get("Genre", ""))
 
 class FileManager:
-    def __init__(self, cfg: Config, dry: bool): self.cfg, self.dry = cfg, dry
+    def __init__(self, cfg: Config, dry_run: bool):
+        self.cfg, self.dry_run = cfg, dry_run
+
     def _find_sidecar_files(self, primary_file: Path) -> List[Path]:
         sidecars = []
         stem = primary_file.stem
@@ -227,7 +224,7 @@ class FileManager:
     def ensure_dir(self, p: Path) -> bool:
         if not p: logging.error("Destination directory path is not set."); return False
         if not p.exists():
-            if self.dry: logging.info(f"DRY RUN: Would create dir '{p}'")
+            if self.dry_run: logging.info(f"DRY RUN: Would create dir '{p}'")
             else:
                 try: p.mkdir(parents=True, exist_ok=True)
                 except Exception as e: logging.error(f"Could not create directory '{p}': {e}"); return False
@@ -249,12 +246,12 @@ class FileManager:
                 logging.warning(f"SKIPPED: File '{target.name}' already exists in '{dest_dir.name}'.")
                 continue
 
-            log_prefix = "DRY RUN:" if self.dry else "Moved"
+            log_prefix = "DRY RUN:" if self.dry_run else "Moved"
             if file_to_move != primary_file: log_prefix += " (sidecar)"
             
             logging.info(f"{log_prefix}: '{file_to_move.name}' -> '{dest_dir.name}'")
 
-            if not self.dry:
+            if not self.dry_run:
                 try:
                     shutil.move(str(file_to_move), str(target))
                 except Exception as e:
@@ -264,7 +261,6 @@ class FileManager:
         return all_moved_successfully
 
 class DirectoryWatcher:
-    # ... (This can be a simplified version, as the manager handles the thread)
     def __init__(self, config: Config):
         self.config = config
         self.last_mtime = 0
@@ -376,7 +372,6 @@ class MediaSorter:
             self.stats = {k: 0 for k in ['processed','movies','tv','anime_movies','anime_series','french_movies','unknown','errors']}
             source_dir = self.cfg.get_path('SOURCE_DIR')
 
-            # --- No change here, validation is fine for a single run ---
             if not source_dir or not source_dir.exists() or not self.ensure_target_dirs():
                 logging.error("Source/Target directory validation failed."); return
             
@@ -426,13 +421,11 @@ class MediaSorter:
         if self._watcher_thread and self._watcher_thread.is_alive():
             logging.warning("Watch mode is already running.")
             return
-        # --- ADDED: Engine-level validation ---
-        # The engine now enforces that watch mode and cleanup mode are mutually exclusive.
+
         if self.cfg.CLEANUP_MODE_ENABLED:
             logging.error("FATAL: Watch mode cannot be started when 'Clean Up In Place' mode is enabled.")
             logging.error("This combination is unsafe. Please disable 'Clean Up In Place' to use watch mode.")
             return
-        # --- END ADDITION ---
 
         def _watch_loop():
             self.is_processing = True
