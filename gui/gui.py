@@ -285,23 +285,39 @@ class App(ctk.CTk):
         for key, entry in self.path_entries.items(): setattr(self.config, key, entry.get())
         for key, var in self.enabled_vars.items(): setattr(self.config, key, var.get())
         if api_key := self.api_key_entry.get(): self.config.OMDB_API_KEY = api_key
+        # Corrected: Convert to set after splitting
         sidecar_text = self.sidecar_entry.get()
-        self.config.SIDECAR_EXTENSIONS = [f".{ext.strip().lstrip('.')}" for ext in sidecar_text.split(',') if ext.strip()]
+        self.config.SIDECAR_EXTENSIONS = {f".{ext.strip().lstrip('.')}" for ext in sidecar_text.split(',') if ext.strip()}
         custom_strings_text = self.custom_strings_entry.get()
-        self.config.CUSTOM_STRINGS_TO_REMOVE = [s.strip().upper() for s in custom_strings_text.split(',') if s.strip()]
+        self.config.CUSTOM_STRINGS_TO_REMOVE = {s.strip().upper() for s in custom_strings_text.split(',') if s.strip()}
         self.config.FRENCH_MODE_ENABLED = self.fr_sauce_var.get()
         self.config.CLEANUP_MODE_ENABLED = self.cleanup_var.get()
         try: self.config.WATCH_INTERVAL = int(self.watch_interval_entry.get()) * 60
         except (ValueError, TypeError): self.config.WATCH_INTERVAL = 15 * 60
-    def start_task(self, task_function, is_watcher=False):
+def start_task(self, task_function, is_watcher=False):
         if self.is_quitting or (self.sorter_thread and self.sorter_thread.is_alive()): return
-        self.is_watching = is_watcher; self.update_config_from_ui() 
-        if not self.config.validate(): return
-        if self.config.FRENCH_MODE_ENABLED and not self.config.CLEANUP_MODE_ENABLED: logging.info("🔵⚪🔴 French Sauce is ENABLED.")
+        
+        # --- LOGIC CORRECTED ---
+        # 1. Update config from UI first to get the current state of all checkboxes/entries.
+        self.update_config_from_ui() 
+        self.is_watching = is_watcher
+        
+        # 2. Validate the config.
+        is_valid, message = self.config.validate()
+        if not is_valid:
+            logging.error(f"Configuration error: {message}")
+            return
+
+        # 3. Log status messages based on the now-current config.
+        if self.config.FRENCH_MODE_ENABLED and not self.config.CLEANUP_MODE_ENABLED: logging.info("🔵⚪🔴 French Mode is ENABLED.")
         if self.config.CLEANUP_MODE_ENABLED: logging.info("🧹 Clean Up Mode is ENABLED.")
+        if self.dry_run_var.get(): logging.info("🧪 Dry Run is ENABLED for this task.")
+
+        # 4. Create the sorter and start the thread.
         self.sorter_instance = backend.MediaSorter(self.config, dry=self.dry_run_var.get())
         self.sorter_thread = threading.Thread(target=task_function, args=(self.sorter_instance,), daemon=True)
-        self.sorter_thread.start(); self.monitor_active_task()
+        self.sorter_thread.start()
+        self.monitor_active_task()
     def start_sort_now(self): self.start_task(lambda sorter: sorter.process_source_directory(), is_watcher=False)
     def toggle_watch_mode(self):
         if self.sorter_thread and self.sorter_thread.is_alive(): self.stop_running_task()
