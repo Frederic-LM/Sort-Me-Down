@@ -7,7 +7,7 @@ SortMeDown - Command-Line Interface (v4.1.0)
 
 This script provides a command-line interface to the SortMeDown engine.
 It handles user input, displays progress in the console, and calls the
-core logic from `bangbang_engine.py`.
+core logic from `bangbang.py`.
 """
 
 import argparse
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 # Import the shared engine components
-from bangbang_engine import Config, MediaSorter, setup_logging
+from bangbang import Config, MediaSorter, setup_logging
 
 # ASCII Art Logo
 ASCII_ART = """
