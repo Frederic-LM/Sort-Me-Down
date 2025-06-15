@@ -99,10 +99,12 @@ The application will detect that config.json is missing and create a default one
 5. Edit config.json
 
 Open the newly created config.json file and fill in the required paths and your API key.
-
+sample:
       
 ```json
 {
+
+    
     "SOURCE_DIR": "C:/Path/To/Your/Downloads",
     "MOVIES_DIR": "D:/Media/Movies",
     "TV_SHOWS_DIR": "D:/Media/TV Shows",
