@@ -262,7 +262,9 @@ This project is licensed under the MIT License - see the LICENSE.md file for det
 
 
 
-:thought_balloon: What if the script run while files are being written or usesd in your source dir
+
+
+### :thought_balloon: What if the script run while files are being written or usesd in your source dir
 
 ### The Most Likely (and Best) Scenario: File is Locked
 
