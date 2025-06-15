@@ -62,10 +62,9 @@ cd your-repo-name
 2. Install Dependencies
 
 The GUI has a few dependencies. You can install them using the provided requirements.txt file (if you create one) or install them manually.
-
       
-# Recommended: Create a requirements.txt with the following and run:
-# pip install -r requirements.txt
+ Recommended: Create a requirements.txt with the following and run:
+ pip install -r requirements.txt
 
 # Manual installation:
 pip install requests customtkinter pystray Pillow
@@ -184,6 +183,9 @@ Your config.json file holds all the settings for the sorter.
     SUPPORTED_EXTENSIONS: File types to be considered primary media files.
 
     SIDECAR_EXTENSIONS: File types (like subtitles or posters) to move alongside the primary media file.
+
+
+    
 
 📜 License
 
