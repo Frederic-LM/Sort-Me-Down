@@ -238,7 +238,7 @@ This method bundles the application and all its dependencies into a single file 
 3.  **Run the PyInstaller Command:**
     In your project directory, execute the following command:
     ```bash
-    pyinstaller --onefile --windowed --name="Sort-Me-Down" --hidden-import="pystray._win32" --icon="icon.ico" gui.py
+    pyinstaller --onefile --windowed --name="Sort-Me-Down" --hidden-import="pystray._win32" --icon="icon.ico" --add-data="icon.ico;." --add-data="icon.png;." gui.py
 
     ```
 
