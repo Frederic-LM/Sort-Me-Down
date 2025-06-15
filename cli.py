@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # cli.py
 """
-SortMeDown - Command-Line Interface (v5.8)
+SortMeDown - Command-Line Interface (v6.0)
 ============================================
 
 This script provides a command-line interface to the SortMeDown engine.
@@ -50,10 +50,11 @@ found in `config.json` for a single run.
     and move the files there. This is useful for tidying up a single large
     download folder. This mode is mutually exclusive with `--watch`.
 
---fr
-    Enable "French mode" for this run. If a movie is identified as being
-    in French, it will be moved to the `FRENCH_MOVIES_DIR` instead of the
-    standard `MOVIES_DIR`.
+#  Depreciated french mode
+#--fr
+#    Enable "French mode" for this run. If a movie is identified as being
+#    in French, it will be moved to the `FRENCH_MOVIES_DIR` instead of the
+#    standard `MOVIES_DIR`.
 
 --mismatched-dir [PATH]
     Override the `MISMATCHED_DIR` setting from the config file. This is
@@ -96,9 +97,11 @@ ASCII_ART = """
 #  ▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░      ░ ▒░   ░  ░░░ ▒░ ░    ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
 #  ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░       ░  ░      ░ ░ ░  ░    ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
 #  ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
-#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░      5.8.0 ░ 
+#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░         6.0 ░ 
 #                                                               ░                                    
 """
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="SortMeDown Media Sorter",
@@ -112,6 +115,9 @@ python cli.py
 # One-time sort setting TMDB as the primary provider for this run
 python cli.py --tmdb
 
+# Override the languages to split for this run
+python cli.py --split-languages "es,de,it"
+
 # Preview all actions without moving any files
 python cli.py --dry-run
 """
@@ -120,11 +126,11 @@ python cli.py --dry-run
     parser.add_argument("--dry-run", action="store_true", help="Preview actions without moving files.")
     parser.add_argument("--watch", action="store_true", help="Monitor source directory for new files.")
     parser.add_argument("--config", type=str, default="config.json", help="Path to the configuration file (default: config.json).")
-    parser.add_argument("--version", action="version", version="SortMeDown CLI 5.8.0")
+    parser.add_argument("--version", action="version", version="SortMeDown CLI 5.9.0")
 
     # --- Override Arguments ---
     parser.add_argument("--tmdb", action="store_true", help="Set TMDB as the primary metadata provider (overrides config).")
-    parser.add_argument("--fr", action="store_true", help="Enable sorting of French-language movies to a separate directory.")
+    parser.add_argument("--split-languages", type=str, help='Comma-separated languages to split into a separate movie folder (e.g., "fr,de" or "all"). Overrides config.')
     parser.add_argument("--cleanup-in-place", action="store_true", help="Sort and rename files within the source directory.")
     parser.add_argument("--watch-interval", type=int, metavar="MIN", help="Override watch interval in minutes from config.")
     parser.add_argument("--mismatched-dir", type=str, help="Override the Mismatched Files directory from config.")
@@ -141,8 +147,8 @@ python cli.py --dry-run
 
     if args.tmdb:
         cfg.API_PROVIDER = "tmdb"
-    if args.fr:
-        cfg.FRENCH_MODE_ENABLED = True
+    if args.split_languages is not None:
+        cfg.LANGUAGES_TO_SPLIT = [lang.strip().lower() for lang in args.split_languages.split(',') if lang.strip()]
     if args.cleanup_in_place:
         cfg.CLEANUP_MODE_ENABLED = True
     if args.watch_interval:
@@ -170,8 +176,8 @@ python cli.py --dry-run
     if args.dry_run:
         logging.info("🧪 DRY RUN MODE - No files will be moved or directories created.")
     logging.info(f"⚙️ PRIMARY PROVIDER: {cfg.API_PROVIDER.upper()}")
-    if cfg.FRENCH_MODE_ENABLED:
-        logging.info("🔵⚪🔴 French mode is ENABLED.")
+    if cfg.SPLIT_MOVIES_DIR and cfg.LANGUAGES_TO_SPLIT:
+        logging.info(f"🔵⚪🔴 Language Split is ENABLED for: {cfg.LANGUAGES_TO_SPLIT}")
     if cfg.CLEANUP_MODE_ENABLED:
         logging.info("🧹 CLEANUP IN-PLACE MODE - Files will be sorted within the source directory.")
     if args.fallback:
