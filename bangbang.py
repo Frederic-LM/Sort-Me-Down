@@ -12,6 +12,14 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
+Version 5.3 Polish
+- Added a periodic log message during watch mode to show the app is still active
+  even when no new files are found.
+
+Version 5.2 BUG FIX
+- Fixed watch mode threading issue where the main task thread would exit prematurely.
+- Correctly toggles `is_processing` state during watch mode for better UI feedback.
+
 Version 5.1
 rafinement with auto creation of missmatched folder and ignore func
 
@@ -216,7 +224,7 @@ class DirectoryWatcher:
 class MediaSorter:
     def __init__(self, cfg: Config, dry_run: bool = False):
         self.cfg = cfg; self.dry_run = dry_run; self.api_client = APIClient(cfg); self.classifier = MediaClassifier(self.api_client)
-        self.fm = FileManager(cfg, self.dry_run); self.stats = {}; self.stop_event = threading.Event(); self.is_processing = False; self._watcher_thread = None
+        self.fm = FileManager(cfg, self.dry_run); self.stats = {}; self.stop_event = threading.Event(); self.is_processing = False
     def signal_stop(self): self.stop_event.set(); logging.info("Stop signal received. Finishing current item...")
     def _get_mismatched_path(self) -> Optional[Path]:
         if path := self.cfg.get_path('MISMATCHED_DIR'): return path
@@ -330,17 +338,35 @@ class MediaSorter:
                 if not os.listdir(dirpath): os.rmdir(dirpath); logging.info(f"Removed empty directory: {dirpath}")
             except OSError as e: logging.error(f"Error removing directory {dirpath}: {e}")
     def start_watch_mode(self):
-        if self._watcher_thread and self._watcher_thread.is_alive(): logging.warning("Watch mode is already running."); return
-        if self.cfg.CLEANUP_MODE_ENABLED: logging.error("FATAL: Watch mode cannot be started when 'Clean Up In Place' mode is enabled."); return
-        def _watch_loop():
-            self.is_processing = True; logging.info("Watch mode started. Press Ctrl+C in the terminal to stop."); logging.info("Performing initial sort...")
-            self.process_source_directory()
-            watcher = DirectoryWatcher(self.cfg)
-            logging.info(f"Initial sort complete. Now watching for changes every {self.cfg.WATCH_INTERVAL // 60} minutes.")
-            while not self.stop_event.wait(timeout=self.cfg.WATCH_INTERVAL):
-                if watcher.check_for_changes(): logging.info("Changes detected! Starting new sort..."); self.process_source_directory(); logging.info("Processing complete. Resuming watch.")
-            logging.info("Watch mode stopped."); self.is_processing = False
-        self.stop_event.clear(); self._watcher_thread = threading.Thread(target=_watch_loop, daemon=True); self._watcher_thread.start()
+        if self.cfg.CLEANUP_MODE_ENABLED:
+            logging.error("FATAL: Watch mode cannot be started when 'Clean Up In Place' mode is enabled.")
+            return
+
+        self.stop_event.clear()
+        logging.info("Watch mode started. Performing initial sort...")
+        self.process_source_directory()
+
+        if self.stop_event.is_set():
+            logging.info("Watch mode stopped during initial sort.")
+            return
+
+        watcher = DirectoryWatcher(self.cfg)
+        logging.info(f"Initial sort complete. Now watching for changes every {self.cfg.WATCH_INTERVAL // 60} minutes.")
+        
+        while not self.stop_event.wait(timeout=self.cfg.WATCH_INTERVAL):
+            if watcher.check_for_changes():
+                logging.info("Changes detected! Starting new sort...")
+                self.process_source_directory() 
+                if self.stop_event.is_set():
+                    logging.warning("Watch loop interrupted by user during sort.")
+                    break
+                logging.info("Processing complete. Resuming watch.")
+            else:
+                # THIS IS THE NEW LINE
+                logging.info("No new files found. Continuing to watch.")
+        
+        logging.info("Watch mode stopped.")
+
     def log_summary(self):
         summary = f"\n\n--- PROCESSING SUMMARY ---\n";
         for k, v in self.stats.items(): summary += f"{k.replace('_',' ').title():<15}: {v}\n"
