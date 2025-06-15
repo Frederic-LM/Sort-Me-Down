@@ -55,7 +55,8 @@ Follow these steps to get SortMeDown up and running.
 
       
 git clone https://github.com/Frederic-LM/Sort-Me-Down.git
-cd your-repo-name
+
+cd Sort-Me-Down
 
     
 
