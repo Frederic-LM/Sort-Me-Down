@@ -138,6 +138,9 @@ Command-Line Interface (CLI)
 
 The CLI is perfect for scripting, automation, or for users who prefer the terminal.
 
+🖼️ Screenshots
+![Screenshot 2025CLI](https://github.com/user-attachments/assets/cbd214fd-6afb-4ed1-ab85-7b24a86e9054)
+
 Basic Commands:
 
       
