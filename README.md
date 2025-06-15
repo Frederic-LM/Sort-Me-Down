@@ -168,7 +168,7 @@ Argument	Description	Example
 --config [PATH]	Use a specific config file.	python cli.py sort --config C:/alt_config.json
 
 python cli.py sort [OPTIONS]
-
+<pre> ```
 Argument	Description	Example
 --dry-run	Simulate the sort without moving/deleting any files.	python cli.py sort --dry-run
 --tmdb	Use TMDB as the primary API provider for this run.	python cli.py sort --tmdb
@@ -176,7 +176,7 @@ Argument	Description	Example
 --cleanup-in-place	Organize files within the source folder instead of moving them to library directories.	python cli.py sort --cleanup-in-place
 --mismatched-dir [PATH]	Override the directory for mismatched files for this run.	python cli.py sort --mismatched-dir "D:/Review"
 --fallback [choice]	Override the fallback behavior for mismatched shows. <br> Choices: ignore, mismatched, tv, anime.	python cli.py sort --fallback tv
-
+ ``` </pre>
 python cli.py watch [OPTIONS]
 
 Argument	Description	Example
