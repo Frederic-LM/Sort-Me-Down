@@ -12,6 +12,9 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
+Version 5.8.1
+-  fixing an ImportError when running cli.py.
+
 Version 5.8
 - Implemented "Conditional Fallback" for API providers. The engine now
   automatically uses a secondary provider if it's configured and the
@@ -35,7 +38,6 @@ Version 5.0
 Vastly improved inteligent sorting of missmatched item by the API
 will decide it it's a movie or a show, move to a mismatched folder or to a default dir tv or anime 
 """
-
 
 from pathlib import Path
 import re
