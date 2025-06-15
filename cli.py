@@ -126,7 +126,7 @@ python cli.py --dry-run
     parser.add_argument("--dry-run", action="store_true", help="Preview actions without moving files.")
     parser.add_argument("--watch", action="store_true", help="Monitor source directory for new files.")
     parser.add_argument("--config", type=str, default="config.json", help="Path to the configuration file (default: config.json).")
-    parser.add_argument("--version", action="version", version="SortMeDown CLI 5.9.0")
+    parser.add_argument("--version", action="version", version="SortMeDown CLI 6.0.0")
 
     # --- Override Arguments ---
     parser.add_argument("--tmdb", action="store_true", help="Set TMDB as the primary metadata provider (overrides config).")
