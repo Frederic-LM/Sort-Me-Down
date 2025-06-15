@@ -7,6 +7,10 @@ This file contains the Graphical User Interface for the SortMeDown media sorter.
 It is built using the CustomTkinter library and provides a user-friendly way
 to interact with the sorting logic defined in `bangbang.py`.
 
+6.0
+Full rewarp of the ex Frenc Sauce
+5.9
+Exist French Sauce => Multi Lang Spliter
 5.8.3
 Minor wording change in the UI
 5.8.2
@@ -21,15 +25,6 @@ v5.4
 Include progress bar and show/hide logs, reduce default windows side 
 
 
-"""
-# gui.py
-"""
-SortMeDown Media Sorter - GUI (gui.py) for bang bang 
-================================
-
-This file contains the Graphical User Interface for the SortMeDown media sorter.
-It is built using the CustomTkinter library and provides a user-friendly way
-to interact with the sorting logic defined in `bangbang.py`.
 """
 
 import customtkinter as ctk
@@ -96,7 +91,6 @@ class App(ctk.CTk):
             'ANIME_MOVIES_ENABLED': ctk.BooleanVar(value=self.config.ANIME_MOVIES_ENABLED),
             'ANIME_SERIES_ENABLED': ctk.BooleanVar(value=self.config.ANIME_SERIES_ENABLED),
         }
-        self.fr_sauce_var = ctk.BooleanVar(value=self.config.FRENCH_MODE_ENABLED)
         self.dry_run_var = ctk.BooleanVar(value=False)
         self.cleanup_var = ctk.BooleanVar(value=self.config.CLEANUP_MODE_ENABLED)
         self.fallback_var = ctk.StringVar(value=self.config.FALLBACK_SHOW_DESTINATION)
@@ -158,14 +152,12 @@ class App(ctk.CTk):
         button_bar_frame = ctk.CTkFrame(parent, fg_color="transparent"); button_bar_frame.grid(row=0, column=0, sticky="ew")
         button_bar_frame.grid_columnconfigure((0, 2), weight=1); button_bar_frame.grid_columnconfigure(1, weight=0)
         
-        # --- RENAMED WIDGET ---
         self.sort_now_button = ctk.CTkButton(button_bar_frame, text="Single Shot Sort", command=self.start_sort_now)
         self.sort_now_button.grid(row=0, column=0, padx=(0, 5), pady=10, sticky="ew")
         self.default_button_color = self.sort_now_button.cget("fg_color"); self.default_hover_color = self.sort_now_button.cget("hover_color")
         
         self.stop_button = ctk.CTkButton(button_bar_frame, text="", width=60, command=self.stop_running_task, fg_color="gray25", border_width=0, state="disabled"); self.stop_button.grid(row=0, column=1, padx=5, pady=10)
         
-        # --- RENAMED WIDGET ---
         self.watch_button = ctk.CTkButton(button_bar_frame, text="Launch Watchdog", command=self.toggle_watch_mode)
         self.watch_button.grid(row=0, column=2, padx=(5, 0), pady=10, sticky="ew")
         
@@ -186,26 +178,20 @@ class App(ctk.CTk):
         
         ctk.CTkFrame(parent, height=2, fg_color="gray25").grid(row=3, column=0, pady=(10, 5), sticky="ew") 
         self.toggles_frame = ctk.CTkFrame(parent, fg_color="transparent"); self.toggles_frame.grid(row=4, column=0, sticky="ew", pady=(0, 5)) 
-        self.toggles_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+        self.toggles_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         
         self.toggles_map = {}
-        # --- RENAMED WIDGET ---
         action_toggles_map = {'Movies': 'MOVIES_ENABLED', 'TV Shows': 'TV_SHOWS_ENABLED', 'Anime Movies': 'ANIME_MOVIES_ENABLED', 'Anime': 'ANIME_SERIES_ENABLED'}
         for i, (label, enable_key) in enumerate(action_toggles_map.items()):
             cb = ctk.CTkCheckBox(self.toggles_frame, text=label, variable=self.enabled_vars[enable_key], command=self.on_media_type_toggled)
             cb.grid(row=0, column=i, padx=5, pady=5)
             self.toggles_map[enable_key] = cb
-            
-        # --- RENAMED WIDGET ---
-        self.french_mode_checkbox = ctk.CTkCheckBox(self.toggles_frame, text="Split non-Eng", variable=self.fr_sauce_var, command=self._on_french_mode_toggled)
-        self.french_mode_checkbox.grid(row=0, column=len(action_toggles_map), padx=5, pady=5)
         
         self.fallback_frame = ctk.CTkFrame(parent, fg_color="transparent"); self.fallback_frame.grid(row=5, column=0, pady=5, sticky="ew")
         ctk.CTkLabel(self.fallback_frame, text="For mismatched shows, default to:").pack(side="left", padx=(5,10))
         self.ignore_radio = ctk.CTkRadioButton(self.fallback_frame, text="Do Nothing", variable=self.fallback_var, value="ignore"); self.ignore_radio.pack(side="left", padx=5)
         self.mismatch_radio = ctk.CTkRadioButton(self.fallback_frame, text="Mismatched Folder", variable=self.fallback_var, value="mismatched"); self.mismatch_radio.pack(side="left", padx=5)
         self.tv_radio = ctk.CTkRadioButton(self.fallback_frame, text="TV Shows Folder", variable=self.fallback_var, value="tv"); self.tv_radio.pack(side="left", padx=5)
-        # --- RENAMED WIDGET ---
         self.anime_radio = ctk.CTkRadioButton(self.fallback_frame, text="Anime Folder", variable=self.fallback_var, value="anime")
         self.anime_radio.pack(side="left", padx=5)
         self.toggle_cleanup_mode_ui()
@@ -259,36 +245,45 @@ class App(ctk.CTk):
         
         self.force_movie_btn = ctk.CTkButton(force_buttons_frame, text="Movie", command=lambda: self.force_reprocess_file(backend.MediaType.MOVIE))
         self.force_tv_btn = ctk.CTkButton(force_buttons_frame, text="TV Show", command=lambda: self.force_reprocess_file(backend.MediaType.TV_SERIES))
-        # --- RENAMED WIDGET ---
         self.force_anime_series_btn = ctk.CTkButton(force_buttons_frame, text="Anime", command=lambda: self.force_reprocess_file(backend.MediaType.ANIME_SERIES))
         self.force_anime_movie_btn = ctk.CTkButton(force_buttons_frame, text="Anime Movie", command=lambda: self.force_reprocess_file(backend.MediaType.ANIME_MOVIE))
-        # --- RENAMED WIDGET ---
-        self.force_french_movie_btn = ctk.CTkButton(force_buttons_frame, text="non-Eng Movie", command=lambda: self.force_reprocess_file(backend.MediaType.MOVIE, is_french=True))
+        self.force_split_lang_movie_btn = ctk.CTkButton(force_buttons_frame, text="Split Lang Movie", command=lambda: self.force_reprocess_file(backend.MediaType.MOVIE, is_split_lang_override=True))
         
         self.force_movie_btn.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
         self.force_tv_btn.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
         self.force_anime_series_btn.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
         self.force_anime_movie_btn.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
-        self.force_french_movie_btn.grid(row=2, column=0, padx=2, pady=2, sticky="ew")
+        self.force_split_lang_movie_btn.grid(row=2, column=0, padx=2, pady=2, sticky="ew")
 
         self._update_mismatch_panel_state()
         
     def create_settings_tab(self, parent):
         parent.grid_columnconfigure(1, weight=1); self.path_entries = {}
-        path_map = {'SOURCE_DIR': 'Source Directory', 'MOVIES_DIR': 'Movies Directory', 'TV_SHOWS_DIR': 'TV Shows Directory', 'ANIME_MOVIES_DIR': 'Anime Movies Directory', 'ANIME_SERIES_DIR': 'Anime Series Directory', 'MISMATCHED_DIR': 'Mismatched Files Directory'}
         row = 0
-        for key, label in path_map.items(): row = self._create_path_entry_row(parent, row, key, label)
-        # --- RENAMED WIDGET ---
-        self.fr_check = ctk.CTkCheckBox(parent, text="non-Eng Movies Directory", variable=self.fr_sauce_var, command=self._on_french_mode_toggled)
-        self.fr_check.grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        self.french_dir_entry = ctk.CTkEntry(parent, width=400); self.french_dir_entry.insert(0, getattr(self.config, "FRENCH_MOVIES_DIR", "")); self.path_entries["FRENCH_MOVIES_DIR"] = self.french_dir_entry
-        self.french_dir_browse = ctk.CTkButton(parent, text="Browse...", width=80, command=lambda e=self.french_dir_entry: self.browse_folder(e))
-        self.toggle_french_dir_visibility(); row += 1
         
+        path_map = {'SOURCE_DIR': 'Source Directory', 'MOVIES_DIR': 'Movies Directory', 'TV_SHOWS_DIR': 'TV Shows Directory', 'ANIME_MOVIES_DIR': 'Anime Movies Directory', 'ANIME_SERIES_DIR': 'Anime Series Directory', 'MISMATCHED_DIR': 'Mismatched Files Directory'}
+        for key, label in path_map.items(): row = self._create_path_entry_row(parent, row, key, label)
+        
+        ctk.CTkLabel(parent, text="Split Language Movies Dir").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        self.split_movies_dir_entry = ctk.CTkEntry(parent, width=400)
+        self.split_movies_dir_entry.insert(0, getattr(self.config, "SPLIT_MOVIES_DIR", ""))
+        self.path_entries["SPLIT_MOVIES_DIR"] = self.split_movies_dir_entry
+        ctk.CTkButton(parent, text="Browse...", width=80, command=lambda e=self.split_movies_dir_entry: self.browse_folder(e)).grid(row=row, column=2, padx=5, pady=5)
+        self.split_movies_dir_entry.grid(row=row, column=1, padx=5, pady=5, sticky="ew")
+        row += 1
+        
+        ctk.CTkLabel(parent, text="Languages to Split").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        self.split_languages_entry = ctk.CTkEntry(parent, placeholder_text='e.g., fr, es, de, all')
+        self.split_languages_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
+        if self.config.LANGUAGES_TO_SPLIT:
+            self.split_languages_entry.insert(0, ", ".join(self.config.LANGUAGES_TO_SPLIT))
+        row += 1
+
         ctk.CTkLabel(parent, text="Sidecar Extensions").grid(row=row, column=0, padx=5, pady=5, sticky="w")
         self.sidecar_entry = ctk.CTkEntry(parent, placeholder_text=".srt, .nfo, .txt"); self.sidecar_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
         if self.config.SIDECAR_EXTENSIONS: self.sidecar_entry.insert(0, ", ".join(self.config.SIDECAR_EXTENSIONS))
         row += 1
+        
         ctk.CTkLabel(parent, text="Custom Strings to Remove").grid(row=row, column=0, padx=5, pady=5, sticky="w")
         self.custom_strings_entry = ctk.CTkEntry(parent, placeholder_text="FRENCH, VOSTFR"); self.custom_strings_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
         if self.config.CUSTOM_STRINGS_TO_REMOVE: self.custom_strings_entry.insert(0, ", ".join(self.config.CUSTOM_STRINGS_TO_REMOVE))
@@ -328,7 +323,6 @@ class App(ctk.CTk):
         """Sets the state of all runtime options widgets. 'normal' or 'disabled'."""
         self.dry_run_checkbox.configure(state=state)
         self.cleanup_checkbox.configure(state=state)
-        self.french_mode_checkbox.configure(state=state)
         self.watch_interval_entry.configure(state=state)
         for checkbox in self.toggles_map.values():
             checkbox.configure(state=state)
@@ -349,8 +343,9 @@ class App(ctk.CTk):
         self.force_tv_btn.configure(state=state)
         self.force_anime_series_btn.configure(state=state)
         self.force_anime_movie_btn.configure(state=state)
-        french_state = state if self.config.FRENCH_MODE_ENABLED else "disabled"
-        self.force_french_movie_btn.configure(state=french_state)
+        split_dir_path = self.path_entries.get('SPLIT_MOVIES_DIR', ctk.CTkEntry(self)).get()
+        split_state = state if split_dir_path else "disabled"
+        self.force_split_lang_movie_btn.configure(state=split_state)
 
         if not is_file_selected:
             self.mismatch_selected_label.configure(text="No file selected.")
@@ -398,7 +393,7 @@ class App(ctk.CTk):
         
         threading.Thread(target=_task, daemon=True).start()
 
-    def force_reprocess_file(self, media_type: backend.MediaType, is_french: bool = False):
+    def force_reprocess_file(self, media_type: backend.MediaType, is_split_lang_override: bool = False):
         if not self.selected_mismatched_file: return
         folder_name = self.mismatch_name_entry.get().strip()
         if not folder_name:
@@ -407,7 +402,7 @@ class App(ctk.CTk):
 
         def _task():
             temp_sorter = backend.MediaSorter(self.config, dry_run=self.dry_run_var.get())
-            temp_sorter.force_move_item(self.selected_mismatched_file, folder_name, media_type, is_french_override=is_french)
+            temp_sorter.force_move_item(self.selected_mismatched_file, folder_name, media_type, is_split_lang_override=is_split_lang_override)
             self.after(0, self.scan_mismatched_files)
 
         threading.Thread(target=_task, daemon=True).start()
@@ -442,9 +437,8 @@ class App(ctk.CTk):
         self.anime_radio.configure(state="normal" if anime_enabled else "disabled")
         if not tv_enabled and self.fallback_var.get() == "tv": self.fallback_var.set("mismatched")
         if not anime_enabled and self.fallback_var.get() == "anime": self.fallback_var.set("mismatched")
-    def _on_french_mode_toggled(self): 
-        self.toggle_french_dir_visibility()
-        self.check_and_prompt_for_path('FRENCH_MOVIES_DIR', self.fr_sauce_var)
+        
+    def _on_french_mode_toggled(self): # Keeping method name for now, though it's repurposed
         self._update_mismatch_panel_state()
 
     def check_and_prompt_for_path(self, dir_key: str, bool_var: ctk.BooleanVar):
@@ -483,15 +477,6 @@ class App(ctk.CTk):
 
     def test_api_key_clicked(self, provider: str):
         threading.Thread(target=self._test_api_key_task, args=(provider,), daemon=True).start()
-
-    def toggle_french_dir_visibility(self):
-        row_index_for_french_dir = 7 
-        if self.fr_sauce_var.get(): 
-            self.french_dir_entry.grid(row=row_index_for_french_dir, column=1, padx=5, pady=5, sticky="ew")
-            self.french_dir_browse.grid(row=row_index_for_french_dir, column=2, padx=5, pady=5)
-        else: 
-            self.french_dir_entry.grid_remove()
-            self.french_dir_browse.grid_remove()
             
     def browse_folder(self, entry_widget):
         if folder_path := filedialog.askdirectory(initialdir=entry_widget.get() or str(Path.home())): 
@@ -512,9 +497,9 @@ class App(ctk.CTk):
         if omdb_key := self.omdb_api_key_entry.get(): self.config.OMDB_API_KEY = omdb_key
         if tmdb_key := self.tmdb_api_key_entry.get(): self.config.TMDB_API_KEY = tmdb_key
 
+        self.config.LANGUAGES_TO_SPLIT = [lang.strip().lower() for lang in self.split_languages_entry.get().split(',') if lang.strip()]
         self.config.SIDECAR_EXTENSIONS = {f".{ext.strip().lstrip('.')}" for ext in self.sidecar_entry.get().split(',') if ext.strip()}
         self.config.CUSTOM_STRINGS_TO_REMOVE = {s.strip().upper() for s in self.custom_strings_entry.get().split(',') if s.strip()}
-        self.config.FRENCH_MODE_ENABLED = self.fr_sauce_var.get()
         self.config.CLEANUP_MODE_ENABLED = self.cleanup_var.get()
         self.config.FALLBACK_SHOW_DESTINATION = self.fallback_var.get()
         try: self.config.WATCH_INTERVAL = int(self.watch_interval_entry.get()) * 60
@@ -539,7 +524,8 @@ class App(ctk.CTk):
         if not is_valid: 
             logging.error(f"Configuration error: {message}")
             return
-        if self.config.FRENCH_MODE_ENABLED and not self.config.CLEANUP_MODE_ENABLED: logging.info("🔵⚪🔴 non-Eng Split is ENABLED.")
+        if self.config.SPLIT_MOVIES_DIR and self.config.LANGUAGES_TO_SPLIT:
+             logging.info(f"🔵⚪🔴 Language Split is ENABLED for: {self.config.LANGUAGES_TO_SPLIT}")
         if self.config.CLEANUP_MODE_ENABLED: logging.info("🧹 Clean Up Mode is ENABLED.")
         if self.dry_run_var.get(): logging.info("🧪 Dry Run is ENABLED for this task.")
         
@@ -568,7 +554,6 @@ class App(ctk.CTk):
         if is_running:
             self._set_options_state("disabled")
             self.sort_now_button.configure(state="disabled")
-            # --- RENAMED WIDGET TEXT ---
             self.watch_button.configure(text="Stop Watchdog" if self.is_watching else "Running...", state="normal" if self.is_watching else "disabled")
             if self.sorter_instance and self.sorter_instance.is_processing: 
                 self.stop_button.configure(state="normal", text="STOP", fg_color="#D32F2F", hover_color="#B71C1C")
@@ -582,7 +567,6 @@ class App(ctk.CTk):
             if self.is_watching: logging.info("✅ Watchdog stopped.")
             else: logging.info("✅ Task finished.")
             self.sort_now_button.configure(state="normal")
-            # --- RENAMED WIDGET TEXT ---
             self.watch_button.configure(text="Launch Watchdog", state="normal")
             self.stop_button.configure(state="disabled", text="", fg_color="gray25")
             self.progress_frame.grid_remove()
