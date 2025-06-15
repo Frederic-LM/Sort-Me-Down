@@ -7,6 +7,8 @@ This file contains the Graphical User Interface for the SortMeDown media sorter.
 It is built using the CustomTkinter library and provides a user-friendly way
 to interact with the sorting logic defined in `bangbang.py`.
 
+5.8.3
+Minor wording change in the UI
 5.8.2
 Lock Action setings while task is run to reflect the way the backend works
 v5.8.1
@@ -19,6 +21,15 @@ v5.4
 Include progress bar and show/hide logs, reduce default windows side 
 
 
+"""
+# gui.py
+"""
+SortMeDown Media Sorter - GUI (gui.py) for bang bang 
+================================
+
+This file contains the Graphical User Interface for the SortMeDown media sorter.
+It is built using the CustomTkinter library and provides a user-friendly way
+to interact with the sorting logic defined in `bangbang.py`.
 """
 
 import customtkinter as ctk
@@ -68,7 +79,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("SortMeDown Media Sorter"); self.geometry("900x850"); ctk.set_appearance_mode("Dark")
-        self.after(200, self._set_window_icon) # Delay icon setting
+        self.after(200, self._set_window_icon)
         
         self.config = backend.Config.load(CONFIG_FILE)
         self.sorter_thread = None; self.sorter_instance = None; self.tray_icon = None; self.tray_thread = None; self.tab_view = None
@@ -146,10 +157,17 @@ class App(ctk.CTk):
         parent.grid_columnconfigure(0, weight=1)
         button_bar_frame = ctk.CTkFrame(parent, fg_color="transparent"); button_bar_frame.grid(row=0, column=0, sticky="ew")
         button_bar_frame.grid_columnconfigure((0, 2), weight=1); button_bar_frame.grid_columnconfigure(1, weight=0)
-        self.sort_now_button = ctk.CTkButton(button_bar_frame, text="Sort Now", command=self.start_sort_now); self.sort_now_button.grid(row=0, column=0, padx=(0, 5), pady=10, sticky="ew")
+        
+        # --- RENAMED WIDGET ---
+        self.sort_now_button = ctk.CTkButton(button_bar_frame, text="Single Shot Sort", command=self.start_sort_now)
+        self.sort_now_button.grid(row=0, column=0, padx=(0, 5), pady=10, sticky="ew")
         self.default_button_color = self.sort_now_button.cget("fg_color"); self.default_hover_color = self.sort_now_button.cget("hover_color")
+        
         self.stop_button = ctk.CTkButton(button_bar_frame, text="", width=60, command=self.stop_running_task, fg_color="gray25", border_width=0, state="disabled"); self.stop_button.grid(row=0, column=1, padx=5, pady=10)
-        self.watch_button = ctk.CTkButton(button_bar_frame, text="Start Watching", command=self.toggle_watch_mode); self.watch_button.grid(row=0, column=2, padx=(5, 0), pady=10, sticky="ew")
+        
+        # --- RENAMED WIDGET ---
+        self.watch_button = ctk.CTkButton(button_bar_frame, text="Launch Watchdog", command=self.toggle_watch_mode)
+        self.watch_button.grid(row=0, column=2, padx=(5, 0), pady=10, sticky="ew")
         
         options_frame = ctk.CTkFrame(parent, fg_color="transparent"); options_frame.grid(row=2, column=0, columnspan=3, sticky="ew")
         options_frame.grid_columnconfigure((0,1), weight=1)
@@ -170,15 +188,16 @@ class App(ctk.CTk):
         self.toggles_frame = ctk.CTkFrame(parent, fg_color="transparent"); self.toggles_frame.grid(row=4, column=0, sticky="ew", pady=(0, 5)) 
         self.toggles_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
         
-        # --- Store references to these checkboxes to disable them later ---
         self.toggles_map = {}
-        action_toggles_map = {'Movies': 'MOVIES_ENABLED', 'TV Shows': 'TV_SHOWS_ENABLED', 'Anime Movies': 'ANIME_MOVIES_ENABLED', 'Anime Series': 'ANIME_SERIES_ENABLED'}
+        # --- RENAMED WIDGET ---
+        action_toggles_map = {'Movies': 'MOVIES_ENABLED', 'TV Shows': 'TV_SHOWS_ENABLED', 'Anime Movies': 'ANIME_MOVIES_ENABLED', 'Anime': 'ANIME_SERIES_ENABLED'}
         for i, (label, enable_key) in enumerate(action_toggles_map.items()):
             cb = ctk.CTkCheckBox(self.toggles_frame, text=label, variable=self.enabled_vars[enable_key], command=self.on_media_type_toggled)
             cb.grid(row=0, column=i, padx=5, pady=5)
             self.toggles_map[enable_key] = cb
             
-        self.french_mode_checkbox = ctk.CTkCheckBox(self.toggles_frame, text="French Mode", variable=self.fr_sauce_var, command=self._on_french_mode_toggled)
+        # --- RENAMED WIDGET ---
+        self.french_mode_checkbox = ctk.CTkCheckBox(self.toggles_frame, text="Split non-Eng", variable=self.fr_sauce_var, command=self._on_french_mode_toggled)
         self.french_mode_checkbox.grid(row=0, column=len(action_toggles_map), padx=5, pady=5)
         
         self.fallback_frame = ctk.CTkFrame(parent, fg_color="transparent"); self.fallback_frame.grid(row=5, column=0, pady=5, sticky="ew")
@@ -186,10 +205,11 @@ class App(ctk.CTk):
         self.ignore_radio = ctk.CTkRadioButton(self.fallback_frame, text="Do Nothing", variable=self.fallback_var, value="ignore"); self.ignore_radio.pack(side="left", padx=5)
         self.mismatch_radio = ctk.CTkRadioButton(self.fallback_frame, text="Mismatched Folder", variable=self.fallback_var, value="mismatched"); self.mismatch_radio.pack(side="left", padx=5)
         self.tv_radio = ctk.CTkRadioButton(self.fallback_frame, text="TV Shows Folder", variable=self.fallback_var, value="tv"); self.tv_radio.pack(side="left", padx=5)
-        self.anime_radio = ctk.CTkRadioButton(self.fallback_frame, text="Anime Series Folder", variable=self.fallback_var, value="anime"); self.anime_radio.pack(side="left", padx=5)
+        # --- RENAMED WIDGET ---
+        self.anime_radio = ctk.CTkRadioButton(self.fallback_frame, text="Anime Folder", variable=self.fallback_var, value="anime")
+        self.anime_radio.pack(side="left", padx=5)
         self.toggle_cleanup_mode_ui()
 
-    # ... (Other create_* methods are unchanged) ...
     def create_mismatch_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
         parent.grid_rowconfigure(1, weight=1)
@@ -239,9 +259,11 @@ class App(ctk.CTk):
         
         self.force_movie_btn = ctk.CTkButton(force_buttons_frame, text="Movie", command=lambda: self.force_reprocess_file(backend.MediaType.MOVIE))
         self.force_tv_btn = ctk.CTkButton(force_buttons_frame, text="TV Show", command=lambda: self.force_reprocess_file(backend.MediaType.TV_SERIES))
-        self.force_anime_series_btn = ctk.CTkButton(force_buttons_frame, text="Anime Series", command=lambda: self.force_reprocess_file(backend.MediaType.ANIME_SERIES))
+        # --- RENAMED WIDGET ---
+        self.force_anime_series_btn = ctk.CTkButton(force_buttons_frame, text="Anime", command=lambda: self.force_reprocess_file(backend.MediaType.ANIME_SERIES))
         self.force_anime_movie_btn = ctk.CTkButton(force_buttons_frame, text="Anime Movie", command=lambda: self.force_reprocess_file(backend.MediaType.ANIME_MOVIE))
-        self.force_french_movie_btn = ctk.CTkButton(force_buttons_frame, text="French Movie", command=lambda: self.force_reprocess_file(backend.MediaType.MOVIE, is_french=True))
+        # --- RENAMED WIDGET ---
+        self.force_french_movie_btn = ctk.CTkButton(force_buttons_frame, text="non-Eng Movie", command=lambda: self.force_reprocess_file(backend.MediaType.MOVIE, is_french=True))
         
         self.force_movie_btn.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
         self.force_tv_btn.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
@@ -250,15 +272,19 @@ class App(ctk.CTk):
         self.force_french_movie_btn.grid(row=2, column=0, padx=2, pady=2, sticky="ew")
 
         self._update_mismatch_panel_state()
+        
     def create_settings_tab(self, parent):
         parent.grid_columnconfigure(1, weight=1); self.path_entries = {}
         path_map = {'SOURCE_DIR': 'Source Directory', 'MOVIES_DIR': 'Movies Directory', 'TV_SHOWS_DIR': 'TV Shows Directory', 'ANIME_MOVIES_DIR': 'Anime Movies Directory', 'ANIME_SERIES_DIR': 'Anime Series Directory', 'MISMATCHED_DIR': 'Mismatched Files Directory'}
         row = 0
         for key, label in path_map.items(): row = self._create_path_entry_row(parent, row, key, label)
-        self.fr_check = ctk.CTkCheckBox(parent, text="French Movies Directory", variable=self.fr_sauce_var, command=self._on_french_mode_toggled); self.fr_check.grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        # --- RENAMED WIDGET ---
+        self.fr_check = ctk.CTkCheckBox(parent, text="non-Eng Movies Directory", variable=self.fr_sauce_var, command=self._on_french_mode_toggled)
+        self.fr_check.grid(row=row, column=0, padx=5, pady=5, sticky="w")
         self.french_dir_entry = ctk.CTkEntry(parent, width=400); self.french_dir_entry.insert(0, getattr(self.config, "FRENCH_MOVIES_DIR", "")); self.path_entries["FRENCH_MOVIES_DIR"] = self.french_dir_entry
         self.french_dir_browse = ctk.CTkButton(parent, text="Browse...", width=80, command=lambda e=self.french_dir_entry: self.browse_folder(e))
         self.toggle_french_dir_visibility(); row += 1
+        
         ctk.CTkLabel(parent, text="Sidecar Extensions").grid(row=row, column=0, padx=5, pady=5, sticky="w")
         self.sidecar_entry = ctk.CTkEntry(parent, placeholder_text=".srt, .nfo, .txt"); self.sidecar_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
         if self.config.SIDECAR_EXTENSIONS: self.sidecar_entry.insert(0, ", ".join(self.config.SIDECAR_EXTENSIONS))
@@ -283,25 +309,21 @@ class App(ctk.CTk):
         row += 1
 
         ctk.CTkLabel(parent, text="TMDB API Key").grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        
         tmdb_api_frame = ctk.CTkFrame(parent, fg_color="transparent")
         tmdb_api_frame.grid(row=row, column=1, columnspan=2, sticky="ew")
         tmdb_api_frame.grid_columnconfigure(0, weight=1)
-
         self.tmdb_api_key_entry = ctk.CTkEntry(tmdb_api_frame, placeholder_text="Enter TMDB API key")
         self.tmdb_api_key_entry.grid(row=0, column=0, sticky="ew")
         if self.config.TMDB_API_KEY and self.config.TMDB_API_KEY != "yourkey":
             self.tmdb_api_key_entry.insert(0, self.config.TMDB_API_KEY)
             self.tmdb_api_key_entry.configure(show="*")
         self.tmdb_api_key_entry.bind("<Key>", lambda e: self.tmdb_api_key_entry.configure(show="*"))
-        
         ctk.CTkLabel(tmdb_api_frame, text="(Optional, for fallback)", text_color="gray50").grid(row=0, column=1, padx=10)
         ctk.CTkButton(tmdb_api_frame, text="Test Key", width=80, command=lambda: self.test_api_key_clicked("tmdb")).grid(row=0, column=2)
         row += 1
 
         ctk.CTkButton(parent, text="Save Settings", command=self.save_settings).grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="e")
     
-    # --- NEW METHOD to disable/enable options ---
     def _set_options_state(self, state: str):
         """Sets the state of all runtime options widgets. 'normal' or 'disabled'."""
         self.dry_run_checkbox.configure(state=state)
@@ -312,7 +334,6 @@ class App(ctk.CTk):
             checkbox.configure(state=state)
         for radio_button in [self.ignore_radio, self.mismatch_radio, self.tv_radio, self.anime_radio]:
             radio_button.configure(state=state)
-        # Re-apply logic for TV/Anime radios if enabling
         if state == "normal":
             self.update_fallback_ui_state()
             self.toggle_cleanup_mode_ui()
@@ -438,7 +459,7 @@ class App(ctk.CTk):
         if self.cleanup_var.get():
             self.sort_now_button.configure(text="Clean Up Source Directory", fg_color="#2E7D32", hover_color="#1B5E20"); self.watch_button.configure(state="disabled")
         else:
-            self.sort_now_button.configure(text="Sort Now", fg_color=self.default_button_color, hover_color=self.default_hover_color)
+            self.sort_now_button.configure(text="Single Shot Sort", fg_color=self.default_button_color, hover_color=self.default_hover_color)
             if not is_running: self.watch_button.configure(state="normal")
     def _create_path_entry_row(self, parent, row, dir_key, label_text):
         ctk.CTkLabel(parent, text=label_text).grid(row=row, column=0, padx=5, pady=5, sticky="w")
@@ -518,7 +539,7 @@ class App(ctk.CTk):
         if not is_valid: 
             logging.error(f"Configuration error: {message}")
             return
-        if self.config.FRENCH_MODE_ENABLED and not self.config.CLEANUP_MODE_ENABLED: logging.info("🔵⚪🔴 French Mode is ENABLED.")
+        if self.config.FRENCH_MODE_ENABLED and not self.config.CLEANUP_MODE_ENABLED: logging.info("🔵⚪🔴 non-Eng Split is ENABLED.")
         if self.config.CLEANUP_MODE_ENABLED: logging.info("🧹 Clean Up Mode is ENABLED.")
         if self.dry_run_var.get(): logging.info("🧪 Dry Run is ENABLED for this task.")
         
@@ -545,9 +566,10 @@ class App(ctk.CTk):
         is_running = self.sorter_thread and self.sorter_thread.is_alive()
         
         if is_running:
-            self._set_options_state("disabled") # Disable options while running
+            self._set_options_state("disabled")
             self.sort_now_button.configure(state="disabled")
-            self.watch_button.configure(text="Stop Watching" if self.is_watching else "Running...", state="normal" if self.is_watching else "disabled")
+            # --- RENAMED WIDGET TEXT ---
+            self.watch_button.configure(text="Stop Watchdog" if self.is_watching else "Running...", state="normal" if self.is_watching else "disabled")
             if self.sorter_instance and self.sorter_instance.is_processing: 
                 self.stop_button.configure(state="normal", text="STOP", fg_color="#D32F2F", hover_color="#B71C1C")
                 if not self.progress_frame.winfo_viewable(): self.progress_frame.grid()
@@ -556,10 +578,12 @@ class App(ctk.CTk):
                 if self.progress_frame.winfo_viewable(): self.progress_frame.grid_remove()
             self.after(500, self.monitor_active_task)
         else:
-            self._set_options_state("normal") # Re-enable options when finished
-            if self.is_watching: logging.info("✅ Watcher stopped.")
+            self._set_options_state("normal")
+            if self.is_watching: logging.info("✅ Watchdog stopped.")
             else: logging.info("✅ Task finished.")
-            self.sort_now_button.configure(state="normal"); self.watch_button.configure(text="Start Watching", state="normal")
+            self.sort_now_button.configure(state="normal")
+            # --- RENAMED WIDGET TEXT ---
+            self.watch_button.configure(text="Launch Watchdog", state="normal")
             self.stop_button.configure(state="disabled", text="", fg_color="gray25")
             self.progress_frame.grid_remove()
             self.sorter_instance = None; self.sorter_thread = None; self.is_watching = False
@@ -581,17 +605,15 @@ class App(ctk.CTk):
         if self.sorter_instance: self.sorter_instance.signal_stop()
         if self.sorter_thread and self.sorter_thread.is_alive(): self.sorter_thread.join(timeout=2)
         
-        # Only join the tray thread if the current thread IS NOT the tray thread.
         if self.tray_thread and self.tray_thread.is_alive() and threading.current_thread() != self.tray_thread:
             self.tray_thread.join(timeout=1.0)
         
         if threading.current_thread() != self.tray_thread:
             self.after(0, self._perform_safe_shutdown)
         else:
-            # When quitting from the tray, schedule the final actions on the main thread if it's still alive
             if self.winfo_exists():
                 self.after(0, self._perform_safe_shutdown)
-            else: # Fallback if GUI is gone
+            else:
                 self.save_settings()
                 os._exit(0)
         
