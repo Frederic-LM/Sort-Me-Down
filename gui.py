@@ -7,8 +7,8 @@ This file contains the Graphical User Interface for the SortMeDown media sorter.
 It is built using the CustomTkinter library and provides a user-friendly way
 to interact with the sorting logic defined in `bangbang.py`.
 
-v5.1
-
+v5.4
+include progress bar and show/hide logs, reduce default windows side 
 """
 
 import customtkinter as ctk
@@ -57,7 +57,7 @@ class GuiLoggingHandler(logging.Handler):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("SortMeDown Media Sorter"); self.geometry("900x850"); ctk.set_appearance_mode("Dark")
+        self.title("SortMeDown Media Sorter"); self.geometry("800x400"); ctk.set_appearance_mode("Dark")
         try:
             if sys.platform == "win32": self.iconbitmap(str(resource_path("icon.ico")))
             else: self.iconphoto(True, tkinter.PhotoImage(file=str(resource_path("icon.png"))))
@@ -65,7 +65,9 @@ class App(ctk.CTk):
         self.config = backend.Config.load(CONFIG_FILE)
         self.sorter_thread = None; self.sorter_instance = None; self.tray_icon = None; self.tab_view = None
         self.is_quitting = False; self.path_entries = {}; self.default_button_color = None; self.default_hover_color = None
-        self.is_watching = False 
+        self.is_watching = False
+        # --- ADDED: State for log visibility ---
+        self.log_is_visible = True
         self.enabled_vars = {
             'MOVIES_ENABLED': ctk.BooleanVar(value=self.config.MOVIES_ENABLED),
             'TV_SHOWS_ENABLED': ctk.BooleanVar(value=self.config.TV_SHOWS_ENABLED),
@@ -76,11 +78,30 @@ class App(ctk.CTk):
         self.dry_run_var = ctk.BooleanVar(value=False)
         self.cleanup_var = ctk.BooleanVar(value=self.config.CLEANUP_MODE_ENABLED)
         self.fallback_var = ctk.StringVar(value=self.config.FALLBACK_SHOW_DESTINATION)
-        self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(1, weight=1)
+        
+        # --- MODIFIED: Main window grid layout to accommodate progress bar at the bottom ---
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=0)  # Controls row (fixed)
+        self.grid_rowconfigure(1, weight=1)  # Log row (expandable)
+        self.grid_rowconfigure(2, weight=0)  # Progress row (fixed)
+
         self.controls_frame = ctk.CTkFrame(self); self.controls_frame.grid(row=0, column=0, padx=10, pady=10, sticky="new")
         self.create_controls()
+        
         self.log_textbox = ctk.CTkTextbox(self, state="disabled", font=("Courier New", 12))
-        self.log_textbox.grid(row=1, column=0, padx=10, pady=(0,10), sticky="nsew")
+        self.log_textbox.grid(row=1, column=0, padx=10, pady=(0,5), sticky="nsew")
+
+        # --- MOVED: Progress bar is now a child of the main window, placed in the new row 2 ---
+        self.progress_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.progress_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+        self.progress_frame.grid_columnconfigure(0, weight=1)
+        self.progress_label = ctk.CTkLabel(self.progress_frame, text="")
+        self.progress_label.grid(row=0, column=0, sticky="w", padx=5)
+        self.progress_bar = ctk.CTkProgressBar(self.progress_frame)
+        self.progress_bar.set(0)
+        self.progress_bar.grid(row=1, column=0, sticky="ew", padx=5)
+        self.progress_frame.grid_remove()  # Start hidden
+
         self.setup_logging(); self.protocol("WM_DELETE_WINDOW", self.quit_app); self.bind("<Unmap>", self.on_minimize); self.setup_tray_icon()
         self.update_fallback_ui_state()
 
@@ -101,27 +122,48 @@ class App(ctk.CTk):
         self.default_button_color = self.sort_now_button.cget("fg_color"); self.default_hover_color = self.sort_now_button.cget("hover_color")
         self.stop_button = ctk.CTkButton(button_bar_frame, text="", width=60, command=self.stop_running_task, fg_color="gray25", border_width=0, state="disabled"); self.stop_button.grid(row=0, column=1, padx=5, pady=10)
         self.watch_button = ctk.CTkButton(button_bar_frame, text="Start Watching", command=self.toggle_watch_mode); self.watch_button.grid(row=0, column=2, padx=(5, 0), pady=10, sticky="ew")
-        options_frame = ctk.CTkFrame(parent, fg_color="transparent"); options_frame.grid(row=1, column=0, columnspan=3, sticky="ew")
+        
+        # --- REMOVED progress bar creation from here ---
+
+        options_frame = ctk.CTkFrame(parent, fg_color="transparent"); options_frame.grid(row=2, column=0, columnspan=3, sticky="ew")
         options_frame.grid_columnconfigure((0,1), weight=1)
         ctk.CTkCheckBox(options_frame, text="Dry Run", variable=self.dry_run_var).grid(row=0, column=0, padx=5, pady=5, sticky="w")
         ctk.CTkCheckBox(options_frame, text="Clean Up Source (disables Watch & Fallback)", variable=self.cleanup_var, command=self.toggle_cleanup_mode_ui).grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        
         watch_interval_frame = ctk.CTkFrame(options_frame, fg_color="transparent"); watch_interval_frame.grid(row=0, column=1, padx=5, pady=5, sticky="e")
         ctk.CTkLabel(watch_interval_frame, text="Check every").pack(side="left", padx=(0,5))
         self.watch_interval_entry = ctk.CTkEntry(watch_interval_frame, width=40); self.watch_interval_entry.pack(side="left"); self.watch_interval_entry.insert(0, str(self.config.WATCH_INTERVAL // 60))
         ctk.CTkLabel(watch_interval_frame, text="minutes").pack(side="left", padx=(5,0))
-        ctk.CTkFrame(parent, height=2, fg_color="gray25").grid(row=2, column=0, pady=(10, 5), sticky="ew")
-        toggles_frame = ctk.CTkFrame(parent, fg_color="transparent"); toggles_frame.grid(row=3, column=0, sticky="ew", pady=(0, 5)) 
+        
+        # --- ADDED: Toggle Log button ---
+        self.toggle_log_button = ctk.CTkButton(options_frame, text="Hide Log", width=100, command=self.toggle_log_visibility)
+        self.toggle_log_button.grid(row=1, column=1, sticky="e", padx=5, pady=5)
+        
+        ctk.CTkFrame(parent, height=2, fg_color="gray25").grid(row=3, column=0, pady=(10, 5), sticky="ew") 
+        toggles_frame = ctk.CTkFrame(parent, fg_color="transparent"); toggles_frame.grid(row=4, column=0, sticky="ew", pady=(0, 5)) 
         toggles_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
         action_toggles_map = {'Movies': ('MOVIES_ENABLED', 'MOVIES_DIR'), 'TV Shows': ('TV_SHOWS_ENABLED', 'TV_SHOWS_DIR'), 'Anime Movies': ('ANIME_MOVIES_ENABLED', 'ANIME_MOVIES_DIR'), 'Anime Series': ('ANIME_SERIES_ENABLED', 'ANIME_SERIES_DIR'),}
         for i, (label, (enable_key, dir_key)) in enumerate(action_toggles_map.items()): ctk.CTkCheckBox(toggles_frame, text=label, variable=self.enabled_vars[enable_key], command=self.on_media_type_toggled).grid(row=0, column=i, padx=5, pady=5)
         ctk.CTkCheckBox(toggles_frame, text="French Mode", variable=self.fr_sauce_var, command=self._on_french_mode_toggled).grid(row=0, column=len(action_toggles_map), padx=5, pady=5)
-        fallback_frame = ctk.CTkFrame(parent, fg_color="transparent"); fallback_frame.grid(row=4, column=0, pady=5, sticky="ew")
+        fallback_frame = ctk.CTkFrame(parent, fg_color="transparent"); fallback_frame.grid(row=5, column=0, pady=5, sticky="ew")
         ctk.CTkLabel(fallback_frame, text="For mismatched shows, default to:").pack(side="left", padx=(5,10))
         self.ignore_radio = ctk.CTkRadioButton(fallback_frame, text="Do Nothing", variable=self.fallback_var, value="ignore"); self.ignore_radio.pack(side="left", padx=5)
         self.mismatch_radio = ctk.CTkRadioButton(fallback_frame, text="Mismatched Folder", variable=self.fallback_var, value="mismatched"); self.mismatch_radio.pack(side="left", padx=5)
-        self.tv_radio = ctk.CTkRadioButton(fallback_frame, text="TV Shows Folder", variable=self.fallback_var, value="tv"); self.tv_radio.pack(side="left", padx=5)
-        self.anime_radio = ctk.CTkRadioButton(fallback_frame, text="Anime Series Folder", variable=self.fallback_var, value="anime"); self.anime_radio.pack(side="left", padx=5)
+        self.tv_radio = ctk.CTkRadioButton(fallback_frame, text="TV", variable=self.fallback_var, value="tv"); self.tv_radio.pack(side="left", padx=5)
+        self.anime_radio = ctk.CTkRadioButton(fallback_frame, text="Anime", variable=self.fallback_var, value="anime"); self.anime_radio.pack(side="left", padx=5)
         self.toggle_cleanup_mode_ui()
+
+    # --- ADDED: Method to toggle log visibility ---
+    def toggle_log_visibility(self):
+        if self.log_is_visible:
+            self.log_textbox.grid_remove()
+            self.grid_rowconfigure(1, weight=0)  # Log's row no longer expands
+            self.toggle_log_button.configure(text="Show Log")
+        else:
+            self.log_textbox.grid()  # grid() remembers previous settings
+            self.grid_rowconfigure(1, weight=1)  # Log's row expands again
+            self.toggle_log_button.configure(text="Hide Log")
+        self.log_is_visible = not self.log_is_visible
 
     def on_media_type_toggled(self): self.update_fallback_ui_state()
     def update_fallback_ui_state(self):
@@ -138,7 +180,6 @@ class App(ctk.CTk):
             if not self.path_entries[dir_key].get().strip(): logging.warning(f"No folder selected. Disabling feature."); bool_var.set(False)
     def stop_running_task(self):
         if self.sorter_instance: logging.warning("🛑 User initiated stop..."); self.sorter_instance.signal_stop()
-        # if self.is_watching: self.is_watching = False # <- REMOVED THIS LINE
     def toggle_cleanup_mode_ui(self):
         is_running = self.sorter_thread and self.sorter_thread.is_alive()
         if self.cleanup_var.get():
@@ -192,6 +233,19 @@ class App(ctk.CTk):
         self.config.FALLBACK_SHOW_DESTINATION = self.fallback_var.get()
         try: self.config.WATCH_INTERVAL = int(self.watch_interval_entry.get()) * 60
         except (ValueError, TypeError): self.config.WATCH_INTERVAL = 15 * 60
+    
+    def _update_progress(self, current_step: int, total_steps: int):
+        self.after(0, self._update_progress_ui, current_step, total_steps)
+    
+    def _update_progress_ui(self, current_step: int, total_steps: int):
+        if total_steps > 0:
+            percentage = current_step / total_steps
+            self.progress_bar.set(percentage)
+            self.progress_label.configure(text=f"Processing: {current_step} / {total_steps}")
+        else:
+            self.progress_bar.set(0)
+            self.progress_label.configure(text="No files to process.")
+
     def start_task(self, task_function, is_watcher=False):
         if self.is_quitting or (self.sorter_thread and self.sorter_thread.is_alive()): return
         self.update_config_from_ui(); self.is_watching = is_watcher
@@ -200,9 +254,19 @@ class App(ctk.CTk):
         if self.config.FRENCH_MODE_ENABLED and not self.config.CLEANUP_MODE_ENABLED: logging.info("🔵⚪🔴 French Mode is ENABLED.")
         if self.config.CLEANUP_MODE_ENABLED: logging.info("🧹 Clean Up Mode is ENABLED.")
         if self.dry_run_var.get(): logging.info("🧪 Dry Run is ENABLED for this task.")
-        self.sorter_instance = backend.MediaSorter(self.config, dry_run=self.dry_run_var.get())
+        
+        self.progress_frame.grid()
+        self.progress_bar.set(0)
+        self.progress_label.configure(text="Initializing...")
+        
+        self.sorter_instance = backend.MediaSorter(
+            self.config, 
+            dry_run=self.dry_run_var.get(),
+            progress_callback=self._update_progress
+        )
         self.sorter_thread = threading.Thread(target=task_function, args=(self.sorter_instance,), daemon=True)
         self.sorter_thread.start(); self.monitor_active_task()
+        
     def start_sort_now(self): self.start_task(lambda sorter: sorter.process_source_directory(), is_watcher=False)
     def toggle_watch_mode(self):
         if self.sorter_thread and self.sorter_thread.is_alive(): self.stop_running_task()
@@ -213,16 +277,22 @@ class App(ctk.CTk):
         if is_running:
             self.sort_now_button.configure(state="disabled")
             self.watch_button.configure(text="Stop Watching" if self.is_watching else "Running...", state="normal" if self.is_watching else "disabled")
-            if self.sorter_instance and self.sorter_instance.is_processing: self.stop_button.configure(state="normal", text="STOP", fg_color="#D32F2F", hover_color="#B71C1C")
-            elif self.is_watching: self.stop_button.configure(state="disabled", text="IDLE", fg_color="#FBC02D", text_color="black")
+            if self.sorter_instance and self.sorter_instance.is_processing: 
+                self.stop_button.configure(state="normal", text="STOP", fg_color="#D32F2F", hover_color="#B71C1C")
+                if not self.progress_frame.winfo_viewable(): self.progress_frame.grid()
+            elif self.is_watching: 
+                self.stop_button.configure(state="disabled", text="IDLE", fg_color="#FBC02D", text_color="black")
+                if self.progress_frame.winfo_viewable(): self.progress_frame.grid_remove()
             self.after(500, self.monitor_active_task)
         else:
             if self.is_watching: logging.info("✅ Watcher stopped.")
             else: logging.info("✅ Task finished.")
             self.sort_now_button.configure(state="normal"); self.watch_button.configure(text="Start Watching", state="normal")
             self.stop_button.configure(state="disabled", text="", fg_color="gray25")
+            self.progress_frame.grid_remove()
             self.sorter_instance = None; self.sorter_thread = None; self.is_watching = False
             self.tray_icon.update_menu(); self.toggle_cleanup_mode_ui()
+    
     def create_tray_image(self):
         try: return Image.open(str(resource_path("icon.png")))
         except Exception:
