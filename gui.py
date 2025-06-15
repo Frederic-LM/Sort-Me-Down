@@ -7,7 +7,7 @@ This file contains the Graphical User Interface for the SortMeDown media sorter.
 It is built using the CustomTkinter library and provides a user-friendly way
 to interact with the sorting logic defined in `bangbang.py`.
 
-v5.8.2
+v5.8.1
 Bug fix on close
 v5.8
 New settings for API Provider
@@ -70,7 +70,6 @@ class App(ctk.CTk):
             else: self.iconphoto(True, tkinter.PhotoImage(file=str(resource_path("icon.png"))))
         except Exception as e: logging.warning(f"Could not set window icon: {e}")
         self.config = backend.Config.load(CONFIG_FILE)
-        # --- MODIFICATION 1: Initialize tray_thread attribute ---
         self.sorter_thread = None; self.sorter_instance = None; self.tray_icon = None; self.tray_thread = None; self.tab_view = None
         self.is_quitting = False; self.path_entries = {}; self.default_button_color = None; self.default_hover_color = None
         self.is_watching = False
@@ -111,7 +110,10 @@ class App(ctk.CTk):
         self.progress_bar.grid(row=1, column=0, sticky="ew", padx=5)
         self.progress_frame.grid_remove()
 
-        self.setup_logging(); self.protocol("WM_DELETE_WINDOW", self.quit_app); self.bind("<Unmap>", self.on_minimize); self.setup_tray_icon()
+        self.setup_logging()
+        self.protocol("WM_DELETE_WINDOW", self.quit_app)
+        self.bind("<Unmap>", self.on_minimize)
+        self.setup_tray_icon()
         self.update_fallback_ui_state()
 
     def setup_logging(self):
@@ -129,7 +131,6 @@ class App(ctk.CTk):
 
         self.tab_view.set("Actions")
 
-    # ... (The rest of the file is unchanged until quit_app)
     def create_actions_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
         button_bar_frame = ctk.CTkFrame(parent, fg_color="transparent"); button_bar_frame.grid(row=0, column=0, sticky="ew")
@@ -165,6 +166,7 @@ class App(ctk.CTk):
         self.tv_radio = ctk.CTkRadioButton(fallback_frame, text="TV Shows Folder", variable=self.fallback_var, value="tv"); self.tv_radio.pack(side="left", padx=5)
         self.anime_radio = ctk.CTkRadioButton(fallback_frame, text="Anime Series Folder", variable=self.fallback_var, value="anime"); self.anime_radio.pack(side="left", padx=5)
         self.toggle_cleanup_mode_ui()
+
     def create_mismatch_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
         parent.grid_rowconfigure(1, weight=1)
@@ -225,6 +227,69 @@ class App(ctk.CTk):
         self.force_french_movie_btn.grid(row=2, column=0, padx=2, pady=2, sticky="ew")
 
         self._update_mismatch_panel_state()
+        
+    def create_settings_tab(self, parent):
+        parent.grid_columnconfigure(1, weight=1)
+        self.path_entries = {}
+        row = 0
+        
+        path_map = {'SOURCE_DIR': 'Source Directory', 'MOVIES_DIR': 'Movies Directory', 'TV_SHOWS_DIR': 'TV Shows Directory', 'ANIME_MOVIES_DIR': 'Anime Movies Directory', 'ANIME_SERIES_DIR': 'Anime Series Directory', 'MISMATCHED_DIR': 'Mismatched Files Directory'}
+        for key, label in path_map.items(): row = self._create_path_entry_row(parent, row, key, label)
+        
+        self.fr_check = ctk.CTkCheckBox(parent, text="French Movies Directory", variable=self.fr_sauce_var, command=self._on_french_mode_toggled)
+        self.fr_check.grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        self.french_dir_entry = ctk.CTkEntry(parent, width=400)
+        self.french_dir_entry.insert(0, getattr(self.config, "FRENCH_MOVIES_DIR", ""))
+        self.path_entries["FRENCH_MOVIES_DIR"] = self.french_dir_entry
+        self.french_dir_browse = ctk.CTkButton(parent, text="Browse...", width=80, command=lambda e=self.french_dir_entry: self.browse_folder(e))
+        self.toggle_french_dir_visibility()
+        row += 1
+        
+        ctk.CTkLabel(parent, text="Sidecar Extensions").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        self.sidecar_entry = ctk.CTkEntry(parent, placeholder_text=".srt, .nfo, .txt")
+        self.sidecar_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
+        if self.config.SIDECAR_EXTENSIONS: self.sidecar_entry.insert(0, ", ".join(self.config.SIDECAR_EXTENSIONS))
+        row += 1
+        
+        ctk.CTkLabel(parent, text="Custom Strings to Remove").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        self.custom_strings_entry = ctk.CTkEntry(parent, placeholder_text="FRENCH, VOSTFR")
+        self.custom_strings_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
+        if self.config.CUSTOM_STRINGS_TO_REMOVE: self.custom_strings_entry.insert(0, ", ".join(self.config.CUSTOM_STRINGS_TO_REMOVE))
+        row += 1
+        
+        ctk.CTkLabel(parent, text="Primary Provider").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        ctk.CTkSegmentedButton(parent, values=["omdb", "tmdb"], variable=self.api_provider_var).grid(row=row, column=1, padx=5, pady=5, sticky="w")
+        row += 1
+
+        ctk.CTkLabel(parent, text="OMDb API Key").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        omdb_api_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        omdb_api_frame.grid(row=row, column=1, columnspan=2, sticky="ew")
+        omdb_api_frame.grid_columnconfigure(0, weight=1)
+        self.omdb_api_key_entry = ctk.CTkEntry(omdb_api_frame, placeholder_text="Enter OMDb API key")
+        self.omdb_api_key_entry.grid(row=0, column=0, sticky="ew")
+        if self.config.OMDB_API_KEY and self.config.OMDB_API_KEY != "yourkey":
+            self.omdb_api_key_entry.insert(0, self.config.OMDB_API_KEY)
+            self.omdb_api_key_entry.configure(show="*")
+        self.omdb_api_key_entry.bind("<Key>", lambda e: self.omdb_api_key_entry.configure(show="*"))
+        ctk.CTkButton(omdb_api_frame, text="Test Key", width=80, command=lambda: self.test_api_key_clicked("omdb")).grid(row=0, column=1, padx=(10,0))
+        row += 1
+
+        ctk.CTkLabel(parent, text="TMDB API Key").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        tmdb_api_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        tmdb_api_frame.grid(row=row, column=1, columnspan=2, sticky="ew")
+        tmdb_api_frame.grid_columnconfigure(0, weight=1)
+        self.tmdb_api_key_entry = ctk.CTkEntry(tmdb_api_frame, placeholder_text="Enter TMDB API key")
+        self.tmdb_api_key_entry.grid(row=0, column=0, sticky="ew")
+        if self.config.TMDB_API_KEY and self.config.TMDB_API_KEY != "yourkey":
+            self.tmdb_api_key_entry.insert(0, self.config.TMDB_API_KEY)
+            self.tmdb_api_key_entry.configure(show="*")
+        self.tmdb_api_key_entry.bind("<Key>", lambda e: self.tmdb_api_key_entry.configure(show="*"))
+        ctk.CTkLabel(tmdb_api_frame, text="(Optional, for fallback)", text_color="gray50").grid(row=0, column=1, padx=10)
+        ctk.CTkButton(tmdb_api_frame, text="Test Key", width=80, command=lambda: self.test_api_key_clicked("tmdb")).grid(row=0, column=2)
+        row += 1
+
+        ctk.CTkButton(parent, text="Save Settings", command=self.save_settings).grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="e")
+
     def _update_mismatch_panel_state(self):
         is_file_selected = self.selected_mismatched_file is not None
         state = "normal" if is_file_selected else "disabled"
@@ -244,6 +309,7 @@ class App(ctk.CTk):
             self.mismatch_name_entry.delete(0, ctk.END)
         else:
             self.mismatch_selected_label.configure(text=f"Selected: {self.selected_mismatched_file.name}")
+
     def scan_mismatched_files(self):
         for widget in self.mismatched_files_frame.winfo_children():
             widget.destroy()
@@ -265,9 +331,11 @@ class App(ctk.CTk):
                                 command=lambda f=file_path: self.select_mismatched_file(f),
                                 fg_color="transparent", anchor="w", text_align="left")
             btn.pack(fill="x", padx=2, pady=2)
+
     def select_mismatched_file(self, file_path: Path):
         self.selected_mismatched_file = file_path
         self._update_mismatch_panel_state()
+
     def reprocess_selected_file(self):
         if not self.selected_mismatched_file: return
         new_name = self.mismatch_name_entry.get().strip()
@@ -281,6 +349,7 @@ class App(ctk.CTk):
             self.after(0, self.scan_mismatched_files)
         
         threading.Thread(target=_task, daemon=True).start()
+
     def force_reprocess_file(self, media_type: backend.MediaType, is_french: bool = False):
         if not self.selected_mismatched_file: return
         folder_name = self.mismatch_name_entry.get().strip()
@@ -294,6 +363,7 @@ class App(ctk.CTk):
             self.after(0, self.scan_mismatched_files)
 
         threading.Thread(target=_task, daemon=True).start()
+
     def delete_selected_file(self):
         if not self.selected_mismatched_file: return
         if not messagebox.askyesno("Confirm Deletion", f"Are you sure you want to permanently delete '{self.selected_mismatched_file.name}' and its sidecar files?"):
@@ -305,6 +375,7 @@ class App(ctk.CTk):
             self.after(0, self.scan_mismatched_files)
             
         threading.Thread(target=_task, daemon=True).start()
+
     def toggle_log_visibility(self):
         if self.log_is_visible:
             self.log_textbox.grid_remove()
@@ -315,6 +386,7 @@ class App(ctk.CTk):
             self.grid_rowconfigure(1, weight=1)
             self.toggle_log_button.configure(text="Hide Log")
         self.log_is_visible = not self.log_is_visible
+
     def on_media_type_toggled(self): self.update_fallback_ui_state()
     def update_fallback_ui_state(self):
         tv_enabled = self.enabled_vars['TV_SHOWS_ENABLED'].get(); anime_enabled = self.enabled_vars['ANIME_SERIES_ENABLED'].get()
@@ -326,6 +398,7 @@ class App(ctk.CTk):
         self.toggle_french_dir_visibility()
         self.check_and_prompt_for_path('FRENCH_MOVIES_DIR', self.fr_sauce_var)
         self._update_mismatch_panel_state()
+
     def check_and_prompt_for_path(self, dir_key: str, bool_var: ctk.BooleanVar):
         if bool_var.get() and dir_key in self.path_entries and not self.path_entries[dir_key].get().strip():
             logging.info(f"Path for {dir_key.replace('_', ' ').title()} is not set. Please select a folder.")
@@ -346,6 +419,7 @@ class App(ctk.CTk):
         entry.insert(0, getattr(self.config, dir_key, "")); self.path_entries[dir_key] = entry
         ctk.CTkButton(parent, text="Browse...", width=80, command=lambda e=entry: self.browse_folder(e)).grid(row=row, column=2, padx=5, pady=5)
         return row + 1
+
     def _test_api_key_task(self, provider: str):
         api_client = backend.APIClient(self.config)
         if provider == "omdb":
@@ -358,65 +432,30 @@ class App(ctk.CTk):
         
         if is_valid: messagebox.showinfo(f"{provider.upper()} Test Success", message)
         else: messagebox.showerror(f"{provider.upper()} Test Failed", message)
+
     def test_api_key_clicked(self, provider: str):
         threading.Thread(target=self._test_api_key_task, args=(provider,), daemon=True).start()
-    def create_settings_tab(self, parent):
-        parent.grid_columnconfigure(1, weight=1); self.path_entries = {}
-        path_map = {'SOURCE_DIR': 'Source Directory', 'MOVIES_DIR': 'Movies Directory', 'TV_SHOWS_DIR': 'TV Shows Directory', 'ANIME_MOVIES_DIR': 'Anime Movies Directory', 'ANIME_SERIES_DIR': 'Anime Series Directory', 'MISMATCHED_DIR': 'Mismatched Files Directory'}
-        row = 0
-        for key, label in path_map.items(): row = self._create_path_entry_row(parent, row, key, label)
-        self.fr_check = ctk.CTkCheckBox(parent, text="French Movies Directory", variable=self.fr_sauce_var, command=self._on_french_mode_toggled); self.fr_check.grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        self.french_dir_entry = ctk.CTkEntry(parent, width=400); self.french_dir_entry.insert(0, getattr(self.config, "FRENCH_MOVIES_DIR", "")); self.path_entries["FRENCH_MOVIES_DIR"] = self.french_dir_entry
-        self.french_dir_browse = ctk.CTkButton(parent, text="Browse...", width=80, command=lambda e=self.french_dir_entry: self.browse_folder(e))
-        self.toggle_french_dir_visibility(); row += 1
-        ctk.CTkLabel(parent, text="Sidecar Extensions").grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        self.sidecar_entry = ctk.CTkEntry(parent, placeholder_text=".srt, .nfo, .txt"); self.sidecar_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
-        if self.config.SIDECAR_EXTENSIONS: self.sidecar_entry.insert(0, ", ".join(self.config.SIDECAR_EXTENSIONS))
-        row += 1
-        ctk.CTkLabel(parent, text="Custom Strings to Remove").grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        self.custom_strings_entry = ctk.CTkEntry(parent, placeholder_text="FRENCH, VOSTFR"); self.custom_strings_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
-        if self.config.CUSTOM_STRINGS_TO_REMOVE: self.custom_strings_entry.insert(0, ", ".join(self.config.CUSTOM_STRINGS_TO_REMOVE))
-        row += 1
-        
-        ctk.CTkLabel(parent, text="Primary Provider").grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        ctk.CTkSegmentedButton(parent, values=["omdb", "tmdb"], variable=self.api_provider_var).grid(row=row, column=1, padx=5, pady=5, sticky="w")
-        row += 1
 
-        ctk.CTkLabel(parent, text="OMDb API Key").grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        omdb_api_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        omdb_api_frame.grid(row=row, column=1, columnspan=2, sticky="ew")
-        omdb_api_frame.grid_columnconfigure(0, weight=1)
-        self.omdb_api_key_entry = ctk.CTkEntry(omdb_api_frame, placeholder_text="Enter OMDb API key"); self.omdb_api_key_entry.grid(row=0, column=0, sticky="ew")
-        if self.config.OMDB_API_KEY and self.config.OMDB_API_KEY != "yourkey": self.omdb_api_key_entry.insert(0, self.config.OMDB_API_KEY); self.omdb_api_key_entry.configure(show="*")
-        self.omdb_api_key_entry.bind("<Key>", lambda e: self.omdb_api_key_entry.configure(show="*"))
-        ctk.CTkButton(omdb_api_frame, text="Test Key", width=80, command=lambda: self.test_api_key_clicked("omdb")).grid(row=0, column=1, padx=(10,0))
-        row += 1
-
-        ctk.CTkLabel(parent, text="TMDB API Key").grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        
-        tmdb_api_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        tmdb_api_frame.grid(row=row, column=1, columnspan=2, sticky="ew")
-        tmdb_api_frame.grid_columnconfigure(0, weight=1)
-
-        self.tmdb_api_key_entry = ctk.CTkEntry(tmdb_api_frame, placeholder_text="Enter TMDB API key")
-        self.tmdb_api_key_entry.grid(row=0, column=0, sticky="ew")
-        if self.config.TMDB_API_KEY and self.config.TMDB_API_KEY != "yourkey":
-            self.tmdb_api_key_entry.insert(0, self.config.TMDB_API_KEY)
-            self.tmdb_api_key_entry.configure(show="*")
-        self.tmdb_api_key_entry.bind("<Key>", lambda e: self.tmdb_api_key_entry.configure(show="*"))
-        
-        ctk.CTkLabel(tmdb_api_frame, text="(Optional, for fallback)", text_color="gray50").grid(row=0, column=1, padx=10)
-        ctk.CTkButton(tmdb_api_frame, text="Test Key", width=80, command=lambda: self.test_api_key_clicked("tmdb")).grid(row=0, column=2)
-        row += 1
-
-        ctk.CTkButton(parent, text="Save Settings", command=self.save_settings).grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="e")
     def toggle_french_dir_visibility(self):
-        row = 7
-        if self.fr_sauce_var.get(): self.french_dir_entry.grid(row=row, column=1, padx=5, pady=5, sticky="ew"); self.french_dir_browse.grid(row=row, column=2, padx=5, pady=5)
-        else: self.french_dir_entry.grid_remove(); self.french_dir_browse.grid_remove()
+        row_index_for_french_dir = 7 # This needs to be accurate
+        if self.fr_sauce_var.get(): 
+            self.french_dir_entry.grid(row=row_index_for_french_dir, column=1, padx=5, pady=5, sticky="ew")
+            self.french_dir_browse.grid(row=row_index_for_french_dir, column=2, padx=5, pady=5)
+        else: 
+            self.french_dir_entry.grid_remove()
+            self.french_dir_browse.grid_remove()
+            
     def browse_folder(self, entry_widget):
-        if folder_path := filedialog.askdirectory(initialdir=entry_widget.get() or str(Path.home())): entry_widget.delete(0, ctk.END); entry_widget.insert(0, folder_path)
-    def save_settings(self): self.update_config_from_ui(); self.config.save(CONFIG_FILE); logging.info("✅ Settings saved to config.json"); self.tray_icon.update_menu()
+        if folder_path := filedialog.askdirectory(initialdir=entry_widget.get() or str(Path.home())): 
+            entry_widget.delete(0, ctk.END)
+            entry_widget.insert(0, folder_path)
+            
+    def save_settings(self): 
+        self.update_config_from_ui()
+        self.config.save(CONFIG_FILE)
+        logging.info("✅ Settings saved to config.json")
+        if self.tray_icon: self.tray_icon.update_menu()
+
     def update_config_from_ui(self):
         for key, entry in self.path_entries.items(): setattr(self.config, key, entry.get())
         for key, var in self.enabled_vars.items(): setattr(self.config, key, var.get())
@@ -435,6 +474,7 @@ class App(ctk.CTk):
     
     def _update_progress(self, current_step: int, total_steps: int):
         self.after(0, self._update_progress_ui, current_step, total_steps)
+    
     def _update_progress_ui(self, current_step: int, total_steps: int):
         if total_steps > 0:
             percentage = current_step / total_steps
@@ -443,11 +483,14 @@ class App(ctk.CTk):
         else:
             self.progress_bar.set(0)
             self.progress_label.configure(text="No files to process.")
+            
     def start_task(self, task_function, is_watcher=False):
         if self.is_quitting or (self.sorter_thread and self.sorter_thread.is_alive()): return
         self.update_config_from_ui(); self.is_watching = is_watcher
         is_valid, message = self.config.validate()
-        if not is_valid: logging.error(f"Configuration error: {message}"); return
+        if not is_valid: 
+            logging.error(f"Configuration error: {message}")
+            return
         if self.config.FRENCH_MODE_ENABLED and not self.config.CLEANUP_MODE_ENABLED: logging.info("🔵⚪🔴 French Mode is ENABLED.")
         if self.config.CLEANUP_MODE_ENABLED: logging.info("🧹 Clean Up Mode is ENABLED.")
         if self.dry_run_var.get(): logging.info("🧪 Dry Run is ENABLED for this task.")
@@ -462,11 +505,14 @@ class App(ctk.CTk):
             progress_callback=self._update_progress
         )
         self.sorter_thread = threading.Thread(target=task_function, args=(self.sorter_instance,), daemon=True)
-        self.sorter_thread.start(); self.monitor_active_task()
+        self.sorter_thread.start()
+        self.monitor_active_task()
+        
     def start_sort_now(self): self.start_task(lambda sorter: sorter.process_source_directory(), is_watcher=False)
     def toggle_watch_mode(self):
         if self.sorter_thread and self.sorter_thread.is_alive(): self.stop_running_task()
         else: self.start_task(lambda sorter: sorter.start_watch_mode(), is_watcher=True)
+        
     def monitor_active_task(self):
         if self.is_quitting: return
         is_running = self.sorter_thread and self.sorter_thread.is_alive()
@@ -488,14 +534,23 @@ class App(ctk.CTk):
             self.progress_frame.grid_remove()
             self.sorter_instance = None; self.sorter_thread = None; self.is_watching = False
             self.tray_icon.update_menu(); self.toggle_cleanup_mode_ui()
+
+    def create_tray_image(self):
+        try: return Image.open(str(resource_path("icon.png")))
+        except Exception:
+            image = Image.new('RGB', (64, 64), "#1F6AA5"); dc = ImageDraw.Draw(image)
+            dc.rectangle((32, 0, 64, 32), fill="#144870"); dc.rectangle((0, 32, 32, 64), fill="#144870")
+            return image
+
     def quit_app(self):
         if self.is_quitting: return
         self.is_quitting = True; logging.info("Shutting down...")
         if self.tray_icon: self.tray_icon.stop()
         if self.sorter_instance: self.sorter_instance.signal_stop()
-        if self.sorter_thread: self.sorter_thread.join(timeout=2)
-        if self.tray_thread: self.tray_thread.join(timeout=1.0)
+        if self.sorter_thread and self.sorter_thread.is_alive(): self.sorter_thread.join(timeout=2)
+        if self.tray_thread and self.tray_thread.is_alive(): self.tray_thread.join(timeout=1.0)
         self.after(0, self._perform_safe_shutdown)
+        
     def _perform_safe_shutdown(self): self.save_settings(); self.destroy()
     def show_window(self): self.deiconify(); self.lift(); self.attributes('-topmost', True); self.tab_view.set("Actions"); self.after(100, lambda: self.attributes('-topmost', False))
     def show_settings(self): self.show_window(); self.tab_view.set("Settings")
@@ -505,6 +560,7 @@ class App(ctk.CTk):
     def set_interval(self, minutes: int):
         logging.info(f"Watch interval set to {minutes} minutes.")
         self.watch_interval_entry.delete(0, ctk.END); self.watch_interval_entry.insert(0, str(minutes)); self.save_settings() 
+        
     def setup_tray_icon(self):
         image = self.create_tray_image()
         menu = (
