@@ -64,11 +64,8 @@ class GuiLoggingHandler(logging.Handler):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("SortMeDown Media Sorter"); self.geometry("900x850"); ctk.set_appearance_mode("Dark")
-        try:
-            if sys.platform == "win32": self.iconbitmap(str(resource_path("icon.ico")))
-            else: self.iconphoto(True, tkinter.PhotoImage(file=str(resource_path("icon.png"))))
-        except Exception as e: logging.warning(f"Could not set window icon: {e}")
+        self.title("SortMeDown Media Sorter v6-RC1"); self.geometry("900x850"); ctk.set_appearance_mode("Dark") #dont forget to update
+        self.after(200, self._set_window_icon)
         self.config = backend.Config.load(CONFIG_FILE)
         self.sorter_thread = None; self.sorter_instance = None; self.tray_icon = None; self.tray_thread = None; self.tab_view = None
         self.is_quitting = False; self.path_entries = {}; self.default_button_color = None; self.default_hover_color = None
@@ -115,7 +112,18 @@ class App(ctk.CTk):
         self.bind("<Unmap>", self.on_minimize)
         self.setup_tray_icon()
         self.update_fallback_ui_state()
-
+        
+    def _set_window_icon(self):
+        """Sets the window icon after a short delay to ensure the window exists."""
+        try:
+            if sys.platform == "win32":
+                self.iconbitmap(str(resource_path("icon.ico")))
+            else:
+                self.iconphoto(True, tkinter.PhotoImage(file=str(resource_path("icon.png"))))
+        except Exception as e:
+            # We still want to log if it fails, but this is much less likely now.
+            logging.warning(f"Could not set window icon: {e}")
+            
     def setup_logging(self):
         log_handler = GuiLoggingHandler(self.log_textbox)
         log_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", "%H:%M:%S"))
@@ -548,8 +556,19 @@ class App(ctk.CTk):
         if self.tray_icon: self.tray_icon.stop()
         if self.sorter_instance: self.sorter_instance.signal_stop()
         if self.sorter_thread and self.sorter_thread.is_alive(): self.sorter_thread.join(timeout=2)
-        if self.tray_thread and self.tray_thread.is_alive(): self.tray_thread.join(timeout=1.0)
-        self.after(0, self._perform_safe_shutdown)
+  # Only join the tray thread if the current thread IS NOT the tray thread.
+        if self.tray_thread and self.tray_thread.is_alive() and threading.current_thread() != self.tray_thread:
+            self.tray_thread.join(timeout=1.0)
+ # If quitting is initiated from the GUI thread, this will schedule the final shutdown.
+        # If initiated from the tray thread, it may not run, but that's okay because the main app will close anyway.
+        if threading.current_thread() != self.tray_thread:
+            self.after(0, self._perform_safe_shutdown)
+        else:
+            # When quitting from the tray, the main window might already be gone.
+            # We must initiate the final shutdown differently.
+            # A simple os._exit is a forceful but effective way here, as all other threads are stopped.
+            self.save_settings()
+            os._exit(0)
         
     def _perform_safe_shutdown(self): self.save_settings(); self.destroy()
     def show_window(self): self.deiconify(); self.lift(); self.attributes('-topmost', True); self.tab_view.set("Actions"); self.after(100, lambda: self.attributes('-topmost', False))
