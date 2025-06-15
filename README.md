@@ -263,8 +263,8 @@ This project is licensed under the MIT License - see the LICENSE.md file for det
 
 
 
-
-## ⚠️ Should you be concerned  if the script run while files are being written or usesd in your source dir? (short anwser no)
+##
+### ⚠️ Should you be concerned  if the script run while files are being written or usesd in your source dir? (short anwser no)
 
 ### The Most Likely (and Best) Scenario: File is Locked
 
