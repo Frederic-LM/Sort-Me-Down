@@ -1,82 +1,23 @@
 #!/usr/bin/env python3
 # cli.py
 """
-SortMeDown - Command-Line Interface (v6.0)
+/!\ MAJOR CHANGES /!\
+SortMeDown - Command-Line Interface (v6.0.0)
 ============================================
-
 This script provides a command-line interface to the SortMeDown engine.
-It handles user input, displays progress in the console, and calls the
-core logic from `bangbang.py`.
+It uses an action-based command structure (`sort` or `watch`) to clearly
+define the desired operation.
+/!\ MAJOR CHANGES /!\
+All settings are read from `config.json` by default. Optional flags can
+be used to override these settings for a single run.
 
 --------------------
-COMMAND-LINE OPTIONS
+COMMANDS
 --------------------
+  sort          Perform a single, one-time sort of the source directory.
+  watch         Start the watchdog to monitor the source directory for changes.
 
-All command-line flags are optional and are used to override the settings 
-found in `config.json` for a single run.
-
---help
-    Show the help message and exit.
-
---version
-    Show the program's version number and exit.
-
---config [PATH]
-    Specifies the path to the configuration file.
-    Default: `config.json` in the same directory as the script.
-    Example: python cli.py --config /path/to/my/custom_config.json
-
---dry-run
-    Perform a "dry run" of the sorting process. The script will log all
-    actions it *would* have taken (classifying, creating folders, moving
-    files) without actually modifying the filesystem. This is highly
-    recommended for the first run to ensure your paths are correct.
-
---watch
-    Enable "watch mode." After an initial sort of the source directory,
-    the script will remain active and monitor the directory for new files,
-    processing them as they are added. This is mutually exclusive with
-   `--cleanup-in-place`.
-
---watch-interval [MINUTES]
-    Override the watch interval defined in the config file.
-    Example: python cli.py --watch --watch-interval 5
-             (Checks for new files every 5 minutes)
-
---cleanup-in-place
-    Enable "cleanup mode." Instead of moving files to separate library
-    directories, this mode organizes files *within* the source directory.
-    It will create subfolders for shows/movies inside the source directory
-    and move the files there. This is useful for tidying up a single large
-    download folder. This mode is mutually exclusive with `--watch`.
-
-#  Depreciated french mode
-#--fr
-#    Enable "French mode" for this run. If a movie is identified as being
-#    in French, it will be moved to the `FRENCH_MOVIES_DIR` instead of the
-#    standard `MOVIES_DIR`.
-
---mismatched-dir [PATH]
-    Override the `MISMATCHED_DIR` setting from the config file. This is
-    the folder where files with conflicting metadata (e.g., year mismatch)
-    are sent for manual review.
-    Example: python cli.py --mismatched-dir "C:/Sorting/Review"
-
---fallback [choice]
-    Override the fallback behavior for shows that have conflicting metadata.
-    This is for files that look like a series (e.g., S01E01) but the API
-    returns a movie, or for shows where no API data is found at all.
-
-    Available choices:
-      - ignore:     Leave the file where it is. Do not move it.
-      - mismatched: Move the file to the "Mismatched" directory. (Default)
-      - tv:         Assume it's a regular TV show and move it to the
-                    TV Shows library.
-      - anime:      Assume it's an anime series and move it to the
-                    Anime Series library.
-    
-    Example: python cli.py --fallback tv
-
+Type `python cli.py [command] --help` for more information on a specific command.
 """
 
 import argparse
@@ -97,67 +38,57 @@ ASCII_ART = """
 #  ▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░      ░ ▒░   ░  ░░░ ▒░ ░    ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
 #  ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░       ░  ░      ░ ░ ░  ░    ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
 #  ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
-#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░         6.0 ░ 
+#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░      6.0.0 ░ 
 #                                                               ░                                    
 """
 
-
 def main():
+    # --- Main Parser ---
     parser = argparse.ArgumentParser(
         description="SortMeDown Media Sorter",
-        formatter_class=argparse.RawTextHelpFormatter,
-        epilog="""
-Usage Examples:
----------------
-# One-time recursive sort using settings from config.json
-python cli.py
-
-# One-time sort setting TMDB as the primary provider for this run
-python cli.py --tmdb
-
-# Override the languages to split for this run
-python cli.py --split-languages "es,de,it"
-
-# Preview all actions without moving any files
-python cli.py --dry-run
-"""
+        formatter_class=argparse.RawTextHelpFormatter
     )
-    # --- Standard Arguments ---
-    parser.add_argument("--dry-run", action="store_true", help="Preview actions without moving files.")
-    parser.add_argument("--watch", action="store_true", help="Monitor source directory for new files.")
     parser.add_argument("--config", type=str, default="config.json", help="Path to the configuration file (default: config.json).")
     parser.add_argument("--version", action="version", version="SortMeDown CLI 6.0.0")
 
-    # --- Override Arguments ---
-    parser.add_argument("--tmdb", action="store_true", help="Set TMDB as the primary metadata provider (overrides config).")
-    parser.add_argument("--split-languages", type=str, help='Comma-separated languages to split into a separate movie folder (e.g., "fr,de" or "all"). Overrides config.')
-    parser.add_argument("--cleanup-in-place", action="store_true", help="Sort and rename files within the source directory.")
-    parser.add_argument("--watch-interval", type=int, metavar="MIN", help="Override watch interval in minutes from config.")
-    parser.add_argument("--mismatched-dir", type=str, help="Override the Mismatched Files directory from config.")
-    parser.add_argument(
-        "--fallback", 
-        choices=["ignore", "mismatched", "tv", "anime"],
-        help="Override fallback destination for mismatched shows. 'ignore' leaves them in place."
-    )
+    subparsers = parser.add_subparsers(dest='command', required=True, help="The action to perform.")
 
+    # --- 'sort' Command Parser ---
+    sort_parser = subparsers.add_parser('sort', help="Perform a single, one-time sort of the source directory.")
+    sort_parser.add_argument("--dry-run", action="store_true", help="Preview actions without moving files.")
+    sort_parser.add_argument("--tmdb", action="store_true", help="Set TMDB as the primary metadata provider for this run.")
+    sort_parser.add_argument("--split-languages", type=str, help='Comma-separated languages to split (e.g., "fr,de" or "all").')
+    sort_parser.add_argument("--cleanup-in-place", action="store_true", help="Sort files within the source directory (mutually exclusive with watch).")
+    sort_parser.add_argument("--mismatched-dir", type=str, help="Override the Mismatched Files directory.")
+    sort_parser.add_argument("--fallback", choices=["ignore", "mismatched", "tv", "anime"], help="Override fallback destination for mismatched shows.")
+
+    # --- 'watch' Command Parser ---
+    watch_parser = subparsers.add_parser('watch', help="Start the watchdog to monitor the source directory for changes.")
+    watch_parser.add_argument("--dry-run", action="store_true", help="Preview actions without moving files for all subsequent sorts.")
+    watch_parser.add_argument("--watch-interval", type=int, metavar="MIN", help="Override watch interval in minutes.")
+
+    # --- Argument Parsing and Config Loading ---
     args = parser.parse_args()
     
     config_path = Path(args.config)
     cfg = Config.load(config_path)
 
-    if args.tmdb:
+    # --- Apply Overrides from Arguments ---
+    # These checks are safe because of the subparser structure.
+    if hasattr(args, 'tmdb') and args.tmdb:
         cfg.API_PROVIDER = "tmdb"
-    if args.split_languages is not None:
+    if hasattr(args, 'split_languages') and args.split_languages is not None:
         cfg.LANGUAGES_TO_SPLIT = [lang.strip().lower() for lang in args.split_languages.split(',') if lang.strip()]
-    if args.cleanup_in_place:
+    if hasattr(args, 'cleanup_in_place') and args.cleanup_in_place:
         cfg.CLEANUP_MODE_ENABLED = True
-    if args.watch_interval:
+    if hasattr(args, 'watch_interval') and args.watch_interval:
         cfg.WATCH_INTERVAL = args.watch_interval * 60
-    if args.mismatched_dir:
+    if hasattr(args, 'mismatched_dir') and args.mismatched_dir:
         cfg.MISMATCHED_DIR = args.mismatched_dir
-    if args.fallback:
+    if hasattr(args, 'fallback') and args.fallback:
         cfg.FALLBACK_SHOW_DESTINATION = args.fallback
 
+    # --- Setup Logging ---
     log_file = Path(__file__).parent / "bangbangSMD.log"
     setup_logging(log_file=log_file, log_to_console=True)
 
@@ -173,6 +104,7 @@ python cli.py --dry-run
             cfg.save(config_path)
         sys.exit(1)
 
+    # --- Log Final Settings ---
     if args.dry_run:
         logging.info("🧪 DRY RUN MODE - No files will be moved or directories created.")
     logging.info(f"⚙️ PRIMARY PROVIDER: {cfg.API_PROVIDER.upper()}")
@@ -180,19 +112,22 @@ python cli.py --dry-run
         logging.info(f"🔵⚪🔴 Language Split is ENABLED for: {cfg.LANGUAGES_TO_SPLIT}")
     if cfg.CLEANUP_MODE_ENABLED:
         logging.info("🧹 CLEANUP IN-PLACE MODE - Files will be sorted within the source directory.")
-    if args.fallback:
+    if hasattr(args, 'fallback') and args.fallback:
         logging.info(f"🔧 FALLBACK OVERRIDE: Mismatched shows will be sent to '{cfg.FALLBACK_SHOW_DESTINATION}'.")
 
     sorter = MediaSorter(cfg, dry_run=args.dry_run)
     
+    # --- Execute Command ---
     try:
-        if args.watch:
-            if args.cleanup_in_place:
-                logging.error("--watch and --cleanup-in-place modes are mutually exclusive.")
-                sys.exit(1)
-            sorter.start_watch_mode()
-        else:
+        if args.command == 'sort':
+            logging.info("Starting a single shot sort...")
             sorter.process_source_directory()
+        elif args.command == 'watch':
+            if cfg.CLEANUP_MODE_ENABLED:
+                logging.error("--cleanup-in-place mode cannot be used with the 'watch' command.")
+                sys.exit(1)
+            logging.info("Launching watchdog...")
+            sorter.start_watch_mode()
             
     except KeyboardInterrupt:
         logging.info("\n⏹️ Operation cancelled by user. Shutting down gracefully...")
