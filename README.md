@@ -140,19 +140,20 @@ python gui.py
 The CLI provides a powerful way to run the sorter from a terminal or in automated scripts. It uses an action-based structure, meaning you always tell the script what you want to do. The primary commands are sort and watch.
 
 🖼️ Screenshots
+
 <img width="724" alt="cliv6" src="https://github.com/user-attachments/assets/2e422370-5867-411b-8d40-b1cd48d12f8a" />
 
 
 All settings are read from config.json by default. You can use the GUI to configure these settings easily, then use the CLI to execute the tasks.
 
 Basic Commands
-# Perform a single, one-time sort using settings from your config.json
+## Perform a single, one-time sort using settings from your config.json
 python cli.py sort
 
-# Start the watchdog to monitor the source directory for new files
+## Start the watchdog to monitor the source directory for new files
 python cli.py watch
 
-# Do a "dry run" to see what would happen without moving any files
+## Do a "dry run" to see what would happen without moving any files
 python cli.py sort --dry-run
 
 All CLI Arguments
