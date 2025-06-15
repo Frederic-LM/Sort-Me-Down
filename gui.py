@@ -1,3 +1,4 @@
+# gui.py
 """
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
@@ -5,6 +6,9 @@ SortMeDown Media Sorter - GUI (gui.py) for bang bang
 This file contains the Graphical User Interface for the SortMeDown media sorter.
 It is built using the CustomTkinter library and provides a user-friendly way
 to interact with the sorting logic defined in `bangbang.py`.
+
+v5.1
+
 """
 
 import customtkinter as ctk
@@ -134,7 +138,7 @@ class App(ctk.CTk):
             if not self.path_entries[dir_key].get().strip(): logging.warning(f"No folder selected. Disabling feature."); bool_var.set(False)
     def stop_running_task(self):
         if self.sorter_instance: logging.warning("🛑 User initiated stop..."); self.sorter_instance.signal_stop()
-        if self.is_watching: self.is_watching = False
+        # if self.is_watching: self.is_watching = False # <- REMOVED THIS LINE
     def toggle_cleanup_mode_ui(self):
         is_running = self.sorter_thread and self.sorter_thread.is_alive()
         if self.cleanup_var.get():
