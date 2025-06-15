@@ -139,6 +139,8 @@ python gui.py
 
 The CLI provides a powerful way to run the sorter from a terminal or in automated scripts. It uses an action-based structure, meaning you always tell the script what you want to do. The primary commands are sort and watch.
 
+All settings are read from config.json by default. You can use the GUI to configure these settings easily, then use the CLI to execute the tasks.
+
 🖼️ Screenshots
 
 <img width="724" alt="cliv6" src="https://github.com/user-attachments/assets/2e422370-5867-411b-8d40-b1cd48d12f8a" />
@@ -146,7 +148,8 @@ The CLI provides a powerful way to run the sorter from a terminal or in automate
 
 All settings are read from config.json by default. You can use the GUI to configure these settings easily, then use the CLI to execute the tasks.
 
-Basic Commands
+📦 Basic Commands
+
 # Perform a single, one-time sort using settings from your config.json
 python cli.py sort
 
@@ -156,34 +159,29 @@ python cli.py watch
 # Do a "dry run" to see what would happen without moving any files
 python cli.py sort --dry-run
 
-All CLI Arguments
+📘 All CLI Arguments
 
 Arguments are specific to the command you are running.
-
 These can be used with any command.
-
+Global Arguments
 Argument	Description	Example
 --help	Show the help message.	python cli.py sort --help
 --version	Show the program version.	python cli.py --version
 --config [PATH]	Use a specific config file.	python cli.py sort --config C:/alt_config.json
-
 python cli.py sort [OPTIONS]
-<pre> ```
 Argument	Description	Example
 --dry-run	Simulate the sort without moving/deleting any files.	python cli.py sort --dry-run
 --tmdb	Use TMDB as the primary API provider for this run.	python cli.py sort --tmdb
---split-languages [langs]	Override the languages to split into a separate movie folder. Can be a comma-separated list (fr,es) or all for any non-English movie.	python cli.py sort --split-languages "fr,de"
+--split-languages	Override the languages to split into a separate movie folder. Can be a comma-separated list (fr,es) or all for any non-English movie.	python cli.py sort --split-languages "fr,de"
 --cleanup-in-place	Organize files within the source folder instead of moving them to library directories.	python cli.py sort --cleanup-in-place
---mismatched-dir [PATH]	Override the directory for mismatched files for this run.	python cli.py sort --mismatched-dir "D:/Review"
---fallback [choice]	Override the fallback behavior for mismatched shows. <br> Choices: ignore, mismatched, tv, anime.	python cli.py sort --fallback tv
- ``` </pre>
+--mismatched-dir	Override the directory for mismatched files for this run.	python cli.py sort --mismatched-dir "D:/Review"
+--fallback [choice]	Override the fallback behavior for mismatched shows.
+Choices: ignore, mismatched, tv, anime.	python cli.py sort --fallback tv
 python cli.py watch [OPTIONS]
-
 Argument	Description	Example
 --dry-run	Run the watchdog in simulation mode. All detected files will be processed as a dry run.	python cli.py watch --dry-run
 --watch-interval [MIN]	Override the watch mode check interval in minutes.	python cli.py watch --watch-interval 5
-
-# 🔧 Configuration Details
+🔧 Configuration Details
 
 Your config.json file holds all the settings for the sorter.
 
