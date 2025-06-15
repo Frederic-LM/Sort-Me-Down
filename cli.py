@@ -99,7 +99,6 @@ ASCII_ART = """
 #        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░      5.8.0 ░ 
 #                                                               ░                                    
 """
-
 def main():
     parser = argparse.ArgumentParser(
         description="SortMeDown Media Sorter",
