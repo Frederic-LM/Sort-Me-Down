@@ -19,6 +19,7 @@
 A powerful, configurable media sorter with both a GUI and CLI.
 </div>
 
+
 ![alt text](https://img.shields.io/badge/python-3.9+-blue.svg) ![alt text](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 SortMeDown automatically organizes your movies, TV shows, and anime into a clean, structured library. It fetches metadata from OMDb and AniList to correctly identify and rename your files, then moves them to your specified library directories.
@@ -43,7 +44,8 @@ SortMeDown automatically organizes your movies, TV shows, and anime into a clean
 🖼️ Screenshots
 Example GUI Layout:
 
-![gui](https://github.com/user-attachments/assets/2a122575-a86b-40aa-b434-32916e9a98a5)
+
+![Screenshot](https://github.com/user-attachments/assets/e33a8a61-07f9-4929-869c-7cb319cf7708)
 
 
 ⚙️ Installation & Setup
