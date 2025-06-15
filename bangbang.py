@@ -12,6 +12,11 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
+Version 6.0
+- Replaced FRENCH_MODE_ENABLED with a flexible LANGUAGES_TO_SPLIT list.
+- Renamed FRENCH_MOVIES_DIR to SPLIT_MOVIES_DIR for clarity.
+- Updated sort logic to handle splitting multiple languages or all non-English.
+
 Version 5.8.1
 -  fixing an ImportError when running cli.py.
 
@@ -38,6 +43,7 @@ Version 5.0
 Vastly improved inteligent sorting of missmatched item by the API
 will decide it it's a movie or a show, move to a mismatched folder or to a default dir tv or anime 
 """
+
 
 from pathlib import Path
 import re
@@ -68,7 +74,6 @@ class MediaInfo:
         if self.year: return f"{folder_title} ({self.year})"
         return folder_title
 
-# --- NEWLY RESTORED FUNCTION ---
 def setup_logging(log_file: Path, log_to_console: bool = False):
     """Configures logging for the application engine."""
     handlers = [logging.FileHandler(log_file, encoding='utf-8')]
@@ -79,7 +84,6 @@ class Config:
     def __init__(self):
         self.SOURCE_DIR = ""
         self.MOVIES_DIR = ""
-        self.FRENCH_MOVIES_DIR = ""
         self.TV_SHOWS_DIR = ""
         self.ANIME_MOVIES_DIR = ""
         self.ANIME_SERIES_DIR = ""
@@ -98,7 +102,11 @@ class Config:
         self.REQUEST_DELAY = 1.0
         self.WATCH_INTERVAL = 15 * 60
         self.FALLBACK_SHOW_DESTINATION = "mismatched"
-        self.FRENCH_MODE_ENABLED = False
+
+        # --- MODIFIED: Replaced boolean with a flexible list ---
+        self.LANGUAGES_TO_SPLIT = ["fr"]
+        self.SPLIT_MOVIES_DIR = "" # Renamed from FRENCH_MOVIES_DIR
+        
         self.MOVIES_ENABLED = True
         self.TV_SHOWS_ENABLED = True
         self.ANIME_MOVIES_ENABLED = True
@@ -116,6 +124,15 @@ class Config:
     @classmethod
     def from_dict(cls, data):
         config = cls()
+        # --- Compatibility for old config files ---
+        if "FRENCH_MODE_ENABLED" in data:
+            if data["FRENCH_MODE_ENABLED"]:
+                config.LANGUAGES_TO_SPLIT = ["fr"]
+            else:
+                config.LANGUAGES_TO_SPLIT = []
+        if "FRENCH_MOVIES_DIR" in data:
+            config.SPLIT_MOVIES_DIR = data["FRENCH_MOVIES_DIR"]
+
         for k, v in data.items():
             if hasattr(config, k):
                 if isinstance(getattr(config, k), set): setattr(config, k, set(v))
@@ -142,7 +159,6 @@ class Config:
         if not source_dir or not source_dir.exists(): return False, f"Source directory not found or not set: {source_dir}"
         return True, "Validation successful."
 
-# ... (The rest of the file is unchanged) ...
 class TitleCleaner:
     METADATA_BREAKPOINT_PATTERN = re.compile(r'('r'\s[\(\[]?\d{4}[\)\]]?\b'r'|\s[Ss]\d{1,2}[Ee]\d{1,2}\b'r'|\s[Ss]\d{1,2}\b'r'|\sSeason\s\d{1,2}\b'r'|\s\d{3,4}p\b'r'|\s(WEBRip|BluRay|BDRip|DVDRip|HDRip|WEB-DL|HDTV)\b'r'|\s(x264|x265|H\.?264|H\.?265|HEVC|AVC)\b'r')', re.IGNORECASE)
     @classmethod
@@ -164,8 +180,9 @@ class TitleCleaner:
         current_year = datetime.now().year
         plausible_years = [m for m in matches if 1900 <= int(m) <= current_year + 2]
         return plausible_years[-1] if plausible_years else None
+
 class APIClient:
-    def __init__(self, config: Config): self.config = config; self.session = requests.Session(); self.session.headers.update({'User-Agent': 'SortMeDown/Engine/5.8'})
+    def __init__(self, config: Config): self.config = config; self.session = requests.Session(); self.session.headers.update({'User-Agent': 'SortMeDown/Engine/5.9'})
     
     def test_omdb_api_key(self, api_key: str) -> Tuple[bool, str]:
         if not api_key or api_key == "yourkey": return False, "API key is empty or is the default key."
@@ -304,6 +321,7 @@ class MediaClassifier:
 
         genres = ", ".join([g["name"] for g in data.get("genres", [])])
         return MediaInfo(title=title, year=year_str, media_type=m_type, language=lang, genre=genres)
+
 class FileManager:
     def __init__(self, cfg: Config, dry_run: bool): self.cfg, self.dry_run = cfg, dry_run
     def _find_sidecar_files(self, primary_file: Path) -> List[Path]:
@@ -347,6 +365,7 @@ class FileManager:
                     logging.info(f"Deleted file: {file_to_delete.name}")
             except Exception as e:
                 logging.error(f"Failed to delete file '{file_to_delete.name}': {e}")
+                
 class DirectoryWatcher:
     def __init__(self, config: Config): self.config = config; self.last_mtime = 0; self._scan()
     def _scan(self):
@@ -356,6 +375,7 @@ class DirectoryWatcher:
             mtime = source_dir.stat().st_mtime
             if mtime > self.last_mtime: self.last_mtime = mtime; return True
         return False
+        
 class MediaSorter:
     def __init__(self, cfg: Config, dry_run: bool = False, progress_callback: Optional[Callable[[int, int], None]] = None):
         self.cfg = cfg; self.dry_run = dry_run; self.api_client = APIClient(cfg); self.classifier = MediaClassifier(self.api_client)
@@ -363,7 +383,7 @@ class MediaSorter:
         self.progress_callback = progress_callback
     def signal_stop(self): self.stop_event.set(); logging.info("Stop signal received. Finishing current item...")
     
-    def force_move_item(self, item: Path, folder_name: str, media_type: MediaType, is_french_override: bool = False):
+    def force_move_item(self, item: Path, folder_name: str, media_type: MediaType, is_split_lang_override: bool = False):
         """Moves a file to a specified library based on manual classification, bypassing API calls."""
         logging.info(f"FORCE MOVE: Manually classifying '{item.name}' as {media_type.value} into folder '{folder_name}'.")
         files_to_move = [item] + self.fm._find_sidecar_files(item)
@@ -375,9 +395,9 @@ class MediaSorter:
             MediaType.ANIME_SERIES: self.cfg.get_path('ANIME_SERIES_DIR')
         }.get(media_type)
 
-        if media_type == MediaType.MOVIE and is_french_override and self.cfg.FRENCH_MODE_ENABLED:
-            base_dir = self.cfg.get_path('FRENCH_MOVIES_DIR')
-            logging.info("French movie override selected.")
+        if media_type == MediaType.MOVIE and is_split_lang_override and self.cfg.SPLIT_MOVIES_DIR:
+            base_dir = self.cfg.get_path('SPLIT_MOVIES_DIR')
+            logging.info("Split language movie override selected.")
 
         if not base_dir:
             logging.error(f"Target directory for {media_type.value} is not set in config. Cannot force move.")
@@ -403,8 +423,10 @@ class MediaSorter:
         if self.cfg.TV_SHOWS_ENABLED: dirs_to_check.append(self.cfg.get_path('TV_SHOWS_DIR'))
         if self.cfg.ANIME_MOVIES_ENABLED: dirs_to_check.append(self.cfg.get_path('ANIME_MOVIES_DIR'))
         if self.cfg.ANIME_SERIES_ENABLED: dirs_to_check.append(self.cfg.get_path('ANIME_SERIES_DIR'))
-        if self.cfg.FRENCH_MODE_ENABLED: dirs_to_check.append(self.cfg.get_path('FRENCH_MOVIES_DIR'))
+        if self.cfg.LANGUAGES_TO_SPLIT and self.cfg.SPLIT_MOVIES_DIR:
+            dirs_to_check.append(self.cfg.get_path('SPLIT_MOVIES_DIR'))
         return all(self.fm.ensure_dir(d) for d in dirs_to_check if d)
+        
     def _validate_api_result(self, file_path: Path, folder_name: str, api_info: MediaInfo) -> MediaInfo:
         is_series_in_filename = TitleCleaner.extract_season_info(file_path.name) is not None
         is_movie_in_api = api_info.media_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]
@@ -431,9 +453,11 @@ class MediaSorter:
         initial_info = self.classifier.classify_media(name_to_classify, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
         info = self._validate_api_result(item, name_to_classify, initial_info)
         files_to_move = [item] + self.fm._find_sidecar_files(item)
-        log_msg = f"Class: {info.media_type.value} | Title: '{info.get_folder_name()}'"; s = self.stats
+        log_msg = f"Class: {info.media_type.value} | Title: '{info.get_folder_name()}'"
+        s = self.stats
         if len(files_to_move) > 1: log_msg += f" | Found {len(files_to_move) - 1} sidecar file(s)."
         logging.info(log_msg)
+        
         if info.media_type == MediaType.UNKNOWN:
             s['unknown'] += 1
             if self.cfg.CLEANUP_MODE_ENABLED: logging.warning("Skipping fallback move in Cleanup Mode."); return
@@ -450,31 +474,63 @@ class MediaSorter:
                     dest_folder = base_dir / info.get_folder_name() / f"Season {season:02d}"
                     if self.fm.move_file_group(files_to_move, dest_folder): s['unknown'] -=1; s['tv' if fallback_dest == 'tv' else 'anime_series' if fallback_dest == 'anime' else 'unknown'] +=1
                     else: s['errors'] += 1
-                else: # Fallback for a movie
+                else: 
                     logging.info("Fallback handler: Mismatched movie routing to Mismatched folder.")
                     base_dir = self._get_mismatched_path()
                     if not base_dir: logging.error("Mismatched directory not set or determinable. Skipping."); s['errors'] += 1; return
                     if self.fm.move_file_group(files_to_move, base_dir / info.get_folder_name()): s['unknown'] -=1; s['movies'] +=1
                     else: s['errors'] += 1
             return
+            
         type_enabled_map = {MediaType.MOVIE: self.cfg.MOVIES_ENABLED, MediaType.TV_SERIES: self.cfg.TV_SHOWS_ENABLED, MediaType.ANIME_MOVIE: self.cfg.ANIME_MOVIES_ENABLED, MediaType.ANIME_SERIES: self.cfg.ANIME_SERIES_ENABLED}
-        if not type_enabled_map.get(info.media_type, True): logging.info(f"Skipping {info.media_type.value} sort (disabled in config)."); return
-        base_dir = item.parent if self.cfg.CLEANUP_MODE_ENABLED else {MediaType.MOVIE: self.cfg.get_path('MOVIES_DIR'), MediaType.TV_SERIES: self.cfg.get_path('TV_SHOWS_DIR'), MediaType.ANIME_MOVIE: self.cfg.get_path('ANIME_MOVIES_DIR'), MediaType.ANIME_SERIES: self.cfg.get_path('ANIME_SERIES_DIR')}.get(info.media_type)
-        if info.media_type == MediaType.MOVIE and self.cfg.FRENCH_MODE_ENABLED and "french" in (info.language or "").lower() and not self.cfg.CLEANUP_MODE_ENABLED: base_dir = self.cfg.get_path('FRENCH_MOVIES_DIR')
-        if not base_dir: logging.error(f"Target directory for {info.media_type.value} is not set."); s['errors'] += 1; return
+        if not type_enabled_map.get(info.media_type, True):
+            logging.info(f"Skipping {info.media_type.value} sort (disabled in config).")
+            return
+
+        base_dir = item.parent if self.cfg.CLEANUP_MODE_ENABLED else {
+            MediaType.MOVIE: self.cfg.get_path('MOVIES_DIR'),
+            MediaType.TV_SERIES: self.cfg.get_path('TV_SHOWS_DIR'),
+            MediaType.ANIME_MOVIE: self.cfg.get_path('ANIME_MOVIES_DIR'),
+            MediaType.ANIME_SERIES: self.cfg.get_path('ANIME_SERIES_DIR')
+        }.get(info.media_type)
+        
+        # --- MODIFIED: This is the core logic change for the new feature ---
+        if info.media_type == MediaType.MOVIE and self.cfg.get_path('SPLIT_MOVIES_DIR') and self.cfg.LANGUAGES_TO_SPLIT and not self.cfg.CLEANUP_MODE_ENABLED:
+            movie_languages = {lang.strip().lower() for lang in (info.language or "").split(',')}
+            split_languages = {lang.strip().lower() for lang in self.cfg.LANGUAGES_TO_SPLIT}
+
+            should_split = False
+            if "all" in split_languages:
+                if "english" not in movie_languages:
+                    should_split = True
+            elif not movie_languages.isdisjoint(split_languages):
+                should_split = True
+
+            if should_split:
+                logging.info(f"🔵⚪🔴 Movie language '{info.language}' matches split rule. Routing to split directory.")
+                base_dir = self.cfg.get_path('SPLIT_MOVIES_DIR')
+                
+        if not base_dir:
+            logging.error(f"Target directory for {info.media_type.value} is not set.")
+            s['errors'] += 1
+            return
+            
         if info.media_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]:
-            key = 'anime_movies' if info.media_type == MediaType.ANIME_MOVIE else 'french_movies' if base_dir == self.cfg.get_path('FRENCH_MOVIES_DIR') else 'movies'
-            if self.fm.move_file_group(files_to_move, base_dir / info.get_folder_name()): s[key] += 1
+            key = 'anime_movies' if info.media_type == MediaType.ANIME_MOVIE else 'movies'
+            if base_dir == self.cfg.get_path('SPLIT_MOVIES_DIR'): key = 'split_lang_movies'
+            
+            if self.fm.move_file_group(files_to_move, base_dir / info.get_folder_name()): s[key] = s.get(key, 0) + 1
             else: s['errors'] += 1
         elif info.media_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
             key = 'anime_series' if info.media_type == MediaType.ANIME_SERIES else 'tv'
             season = TitleCleaner.extract_season_info(item.name) or 1
             if self.fm.move_file_group(files_to_move, base_dir / info.get_folder_name() / f"Season {season:02d}"): s[key] += 1
             else: s['errors'] += 1
+            
     def process_source_directory(self):
         self.is_processing = True
         try:
-            self.stop_event.clear(); self.stats = {k: 0 for k in ['processed','movies','tv','anime_movies','anime_series','french_movies','unknown','errors']}
+            self.stop_event.clear(); self.stats = {k: 0 for k in ['processed','movies','tv','anime_movies','anime_series','split_lang_movies','unknown','errors']}
             source_dir = self.cfg.get_path('SOURCE_DIR')
             if not source_dir or not source_dir.exists() or not self.ensure_target_dirs(): logging.error("Source/Target directory validation failed."); return
             logging.info("Starting deep scan of source directory...")
@@ -548,5 +604,7 @@ class MediaSorter:
 
     def log_summary(self):
         summary = f"\n\n--- PROCESSING SUMMARY ---\n";
-        for k, v in self.stats.items(): summary += f"{k.replace('_',' ').title():<15}: {v}\n"
+        for k, v in self.stats.items(): 
+            if v > 0:
+                summary += f"{k.replace('_',' ').title():<20}: {v}\n"
         summary += f"--------------------------\n"; logging.info(summary)
