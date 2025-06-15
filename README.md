@@ -135,40 +135,54 @@ python gui.py
 
     Settings Tab: Configure all your library paths, API key, and other advanced options.
 
-Command-Line Interface (CLI)
+# Command-Line Interface (CLI)
 
-The CLI is perfect for scripting, automation, or for users who prefer the terminal.
+The CLI provides a powerful way to run the sorter from a terminal or in automated scripts. It uses an action-based structure, meaning you always tell the script what you want to do. The primary commands are sort and watch.
 
 🖼️ Screenshots
-![Screenshot 2025CLI](https://github.com/user-attachments/assets/cbd214fd-6afb-4ed1-ab85-7b24a86e9054)
+<img width="724" alt="cliv6" src="https://github.com/user-attachments/assets/2e422370-5867-411b-8d40-b1cd48d12f8a" />
 
-Basic Commands:
 
-      
-# Perform a one-time sort using settings from config.json
-python cli.py
+All settings are read from config.json by default. You can use the GUI to configure these settings easily, then use the CLI to execute the tasks.
 
-# Preview all actions without moving any files
-python cli.py --dry-run
+Basic Commands
+# Perform a single, one-time sort using settings from your config.json
+python cli.py sort
 
-# Start watch mode to monitor the source directory
-python cli.py --watch
-  
+# Start the watchdog to monitor the source directory for new files
+python cli.py watch
 
-All CLI Arguments:
-| Argument | Description | Example |
-|---|---|---|
-| --help | Show the help message. | |
-| --version | Show the program version. | |
-| --config [PATH] | Use a specific config file. | --config C:/alt_config.json |
-| --dry-run | Simulate a run without changing files. | |
-| --watch | Enable watch mode. | |
-| --watch-interval [MIN] | Set watch mode interval in minutes. | --watch --watch-interval 5 |
-| --cleanup-in-place| Organize files within the source folder. | |
-| --fr | Enable sorting for French movies. | |
-| --mismatched-dir [PATH] | Override the directory for mismatched files. | --mismatched-dir "D:/Review"|
-| --fallback [choice] | Override fallback for mismatched shows. <br> Choices: ignore, mismatched, tv, anime. | --fallback tv |
-🔧 Configuration Details
+# Do a "dry run" to see what would happen without moving any files
+python cli.py sort --dry-run
+
+All CLI Arguments
+
+Arguments are specific to the command you are running.
+
+These can be used with any command.
+
+Argument	Description	Example
+--help	Show the help message.	python cli.py sort --help
+--version	Show the program version.	python cli.py --version
+--config [PATH]	Use a specific config file.	python cli.py sort --config C:/alt_config.json
+
+python cli.py sort [OPTIONS]
+
+Argument	Description	Example
+--dry-run	Simulate the sort without moving/deleting any files.	python cli.py sort --dry-run
+--tmdb	Use TMDB as the primary API provider for this run.	python cli.py sort --tmdb
+--split-languages [langs]	Override the languages to split into a separate movie folder. Can be a comma-separated list (fr,es) or all for any non-English movie.	python cli.py sort --split-languages "fr,de"
+--cleanup-in-place	Organize files within the source folder instead of moving them to library directories.	python cli.py sort --cleanup-in-place
+--mismatched-dir [PATH]	Override the directory for mismatched files for this run.	python cli.py sort --mismatched-dir "D:/Review"
+--fallback [choice]	Override the fallback behavior for mismatched shows. <br> Choices: ignore, mismatched, tv, anime.	python cli.py sort --fallback tv
+
+python cli.py watch [OPTIONS]
+
+Argument	Description	Example
+--dry-run	Run the watchdog in simulation mode. All detected files will be processed as a dry run.	python cli.py watch --dry-run
+--watch-interval [MIN]	Override the watch mode check interval in minutes.	python cli.py watch --watch-interval 5
+
+# 🔧 Configuration Details
 
 Your config.json file holds all the settings for the sorter.
 
