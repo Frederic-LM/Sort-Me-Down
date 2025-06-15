@@ -185,7 +185,7 @@ Your config.json file holds all the settings for the sorter.
     SIDECAR_EXTENSIONS: File types (like subtitles or posters) to move alongside the primary media file.
 
 
-### Option : Compiling into a Standalone Executable
+# Option : Compiling into a Standalone Executable
 
 This method bundles the application and all its dependencies into a single file that can be run on other computers without needing to install Python.
 
