@@ -62,10 +62,9 @@ cd Sort-Me-Down
 
 2. Install Dependencies
 
-The GUI has a few dependencies. You can install them using the provided requirements.txt file (if you create one) or install them manually.
+The GUI has a few dependencies. You can install them using the provided requirements.txt file.
       
- Recommended: Create a requirements.txt with the following and run:
- pip install -r requirements.txt
+  pip install -r requirements.txt
 
 # Manual installation:
 pip install requests customtkinter pystray Pillow
