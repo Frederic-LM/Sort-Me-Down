@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # cli.py
 """
-SortMeDown - Command-Line Interface (v4.9.0)
+SortMeDown - Command-Line Interface (v5.1)
 ============================================
 
 This script provides a command-line interface to the SortMeDown engine.
@@ -96,7 +96,7 @@ ASCII_ART = """
 #  ▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░      ░ ▒░   ░  ░░░ ▒░ ░    ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
 #  ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░       ░  ░      ░ ░ ░  ░    ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
 #  ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
-#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░      4.2.0 ░ 
+#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░         5.1 ░ 
 #                                                               ░                                    
 """
 
@@ -124,7 +124,7 @@ python cli.py --watch
     parser.add_argument("--dry-run", action="store_true", help="Preview actions without moving files.")
     parser.add_argument("--watch", action="store_true", help="Monitor source directory for new files.")
     parser.add_argument("--config", type=str, default="config.json", help="Path to the configuration file (default: config.json).")
-    parser.add_argument("--version", action="version", version="SortMeDown CLI 4.2.0")
+    parser.add_argument("--version", action="version", version="SortMeDown CLI 4.9.1")
 
     # --- Override Arguments ---
     parser.add_argument("--fr", action="store_true", help="Enable sorting of French-language movies to a separate directory.")
@@ -195,17 +195,18 @@ python cli.py --watch
             if args.cleanup_in_place:
                 logging.error("--watch and --cleanup-in-place modes are mutually exclusive.")
                 sys.exit(1)
+            # With the corrected backend, start_watch_mode is now a blocking call
+            # that runs until it is stopped. The old while loop is no longer needed.
             sorter.start_watch_mode()
-            while sorter._watcher_thread.is_alive():
-                sorter._watcher_thread.join(timeout=1.0)
         else:
+            # This remains a simple, one-off call.
             sorter.process_source_directory()
             
     except KeyboardInterrupt:
         logging.info("\n⏹️ Operation cancelled by user. Shutting down gracefully...")
+        # The signal_stop() method is now the only thing needed to stop
+        # either a watch or a regular sort.
         sorter.signal_stop()
-        if sorter._watcher_thread and sorter._watcher_thread.is_alive():
-            sorter._watcher_thread.join()
         logging.info("Shutdown complete.")
     except Exception as e:
         logging.error(f"A fatal error occurred: {e}", exc_info=True)
