@@ -7,7 +7,7 @@ This file contains the Graphical User Interface for the SortMeDown media sorter.
 It is built using the CustomTkinter library and provides a user-friendly way
 to interact with the sorting logic defined in `bangbang.py`.
 
-v5.8.1
+v5.8.2
 Bug fix on close
 v5.8
 New settings for API Provider
@@ -17,6 +17,7 @@ v5.4
 Include progress bar and show/hide logs, reduce default windows side 
 
 """
+
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import logging
