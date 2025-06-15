@@ -44,8 +44,7 @@ SortMeDown automatically organizes your movies, TV shows, and anime into a clean
 🖼️ Screenshots
 Example GUI Layout:
 
-
-![Screenshot](https://github.com/user-attachments/assets/e33a8a61-07f9-4929-869c-7cb319cf7708)
+![Screenshot GUI 2025](https://github.com/user-attachments/assets/0f1b180a-3e74-4717-8f04-8b7701e75ad3)
 
 
 ⚙️ Installation & Setup
