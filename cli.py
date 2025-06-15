@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # cli.py
 """
-/!\ MAJOR CHANGES /!\
+v6.0.1
+small rafinement for daemonisation
+
+! MAJOR CHANGES !
 SortMeDown - Command-Line Interface (v6.0.0)
 ============================================
 This script provides a command-line interface to the SortMeDown engine.
 It uses an action-based command structure (`sort` or `watch`) to clearly
 define the desired operation.
-/!\ MAJOR CHANGES /!\
+! MAJOR CHANGES !
 All settings are read from `config.json` by default. Optional flags can
 be used to override these settings for a single run.
 
@@ -38,17 +41,19 @@ ASCII_ART = """
 #  ▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░      ░ ▒░   ░  ░░░ ▒░ ░    ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
 #  ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░       ░  ░      ░ ░ ░  ░    ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
 #  ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
-#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░      6.0.0 ░ 
+#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░      6.0.1 ░ 
 #                                                               ░                                    
 """
 
 def main():
+    
     # --- Main Parser ---
+    SCRIPT_DIR = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(
         description="SortMeDown Media Sorter",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("--config", type=str, default="config.json", help="Path to the configuration file (default: config.json).")
+    parser.add_argument("--config", type=str, default=str(SCRIPT_DIR / "config.json"), help="Path to the configuration file (default: config.json).")
     parser.add_argument("--version", action="version", version="SortMeDown CLI 6.0.0")
 
     subparsers = parser.add_subparsers(dest='command', required=True, help="The action to perform.")
@@ -90,9 +95,15 @@ def main():
 
     # --- Setup Logging ---
     log_file = Path(__file__).parent / "bangbangSMD.log"
-    setup_logging(log_file=log_file, log_to_console=True)
+    # Use an absolute path for the log file
+    log_file = SCRIPT_DIR / "bangbangSMD.log"
+    setup_logging(log_file=log_file, log_to_console=True) # Console logging is fine, systemd/NSSM will capture it.
 
-    print(ASCII_ART)
+    #def for deamon 
+    is_interactive = sys.stdout.isatty()
+    
+    if is_interactive:
+        print(ASCII_ART)
     
     is_valid, message = cfg.validate()
     if not is_valid:
@@ -105,7 +116,7 @@ def main():
         sys.exit(1)
 
     # --- Log Final Settings ---
-    if args.dry_run:
+    if args.dry_run and is_interactive:
         logging.info("🧪 DRY RUN MODE - No files will be moved or directories created.")
     logging.info(f"⚙️ PRIMARY PROVIDER: {cfg.API_PROVIDER.upper()}")
     if cfg.SPLIT_MOVIES_DIR and cfg.LANGUAGES_TO_SPLIT:
