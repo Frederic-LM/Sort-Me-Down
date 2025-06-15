@@ -213,7 +213,7 @@ This method bundles the application and all its dependencies into a single file 
 1.  **Run the PyInstaller Command:**
     Open a command prompt or terminal in your project directory and execute the following command:
     ```bash
-    pyinstaller --onefile --windowed --hidden-import="pystray._win32" --icon="icon.ico" --name="Short-Me-Down" gui.py
+    pyinstaller --onefile --windowed --hidden-import="pystray._win32" --add-data "icon.ico;." --add-data "icon.png;." --icon="icon.ico" --name="Short-Me-Down" gui.py
     ```
 2.  **Find Your Executable:**
     After the process completes, a `dist` folder will be created. Inside this folder, you will find your final `Short-Me-Down.exe` file. This file can be shared and run on Windows machine.
