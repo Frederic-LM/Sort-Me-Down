@@ -203,6 +203,7 @@ This method bundles the application and all its dependencies into a single file 
     ├── gui.py
     ├── bangbang.py
     └── icon.ico  (for Windows) OR icon.icns (for macOS)
+    └── icon.png 
     ```
 
 ---
@@ -212,10 +213,10 @@ This method bundles the application and all its dependencies into a single file 
 1.  **Run the PyInstaller Command:**
     Open a command prompt or terminal in your project directory and execute the following command:
     ```bash
-    pyinstaller --onefile --windowed --hidden-import="pystray._win32" --icon="icon.ico" gui.py
+    pyinstaller --onefile --windowed --hidden-import="pystray._win32" --icon="icon.ico" --name="Short-Me-Down" gui.py
     ```
 2.  **Find Your Executable:**
-    After the process completes, a `dist` folder will be created. Inside this folder, you will find your final `gui.exe` file. This file can be shared and run on any modern Windows machine.
+    After the process completes, a `dist` folder will be created. Inside this folder, you will find your final `Short-Me-Down.exe` file. This file can be shared and run on Windows machine.
 
 ---
 
@@ -239,17 +240,17 @@ This method bundles the application and all its dependencies into a single file 
 3.  **Run the PyInstaller Command:**
     In your project directory, execute the following command:
     ```bash
-    pyinstaller --onefile --windowed --name="Sort-Me-Down" --hidden-import="pystray._win32" --icon="icon.ico" --add-data="icon.ico;." --add-data="icon.png;." gui.py
+    pyinstaller --onefile --windowed --name="Sort-Me-Down" --hidden-import="pystray._win32" --icon="icon.ico" --add-data="icon.ico;." --add-data="icon.png;." --name="Short-Me-Down" gui.py
 
     ```
 
 4.  **Find and Run Your Application:**
-    The `dist` folder will contain your final `gui.app` bundle.
+    The `dist` folder will contain your final `Short-Me-Down.app` bundle.
 
     > **Gatekeeper Security Warning (CRITICAL!)**
     > The first time you run the app, macOS will likely block it as it's from an "unidentified developer."
     >
-    > **To run it, you must right-click the `gui.app` file and select "Open" from the context menu.**
+    > **To run it, you must right-click the `Short-Me-Down.app` file and select "Open" from the context menu.**
     >
     > A dialog will appear with an "Open" button that will allow you to run the application. This only needs to be done once.
 
@@ -318,9 +319,9 @@ A more robust, "industrial-strength" sorter would add one more check to mitigate
 4.  **If the size or time has changed, the file is still being written to. Skip it for this run.**
 5.  If the size and time are identical after the delay, it's "stale" (no longer being written) and safe to process.
 
-Your script **does not** currently have this "stale file" logic. It relies on the operating system's file locking.
+Bangbang  **does not** currently have this "stale file" logic. It relies on the operating system's file locking.
 
-### Summary for Your Script
+### Summary
 
 | Feature | How it's Handled | Outcome |
 | :--- | :--- | :--- |
