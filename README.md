@@ -442,7 +442,7 @@ By following these steps, the `cli.py` script will run reliably in the backgroun
 
 
 
-## ⚠️ Should you be concerned if the script run while files are being written/usesd in your source dir? Short anwser: no :wink:
+## ⚠️ Should you be concerned if the script run while files are being written ? Short anwser: no :wink:
 
 ## The Most Likely (and Best) Scenario: File is Locked
 
@@ -479,9 +479,9 @@ Some simpler programs or specific OS/filesystem combinations (more common on Lin
 
 This is generally undesirable as you end up with a corrupt/incomplete file in your library. However, it's less likely with modern download clients that are designed to handle this.
 
-## A Potential Improvement (The "Stale File" Check)
+## A Potential Improvement would be a "Stale File" Check.
 
-A more robust, "industrial-strength" sorter would add one more check to mitigate both scenarios. This is often called a "stale file" check. Before attempting to process a file, it would do this:
+Before attempting to process a file, teh script would do this:
 
 1.  Get the file's current size and modification time.
 2.  Wait for a short period (e.g., 10-30 seconds).
@@ -489,7 +489,7 @@ A more robust, "industrial-strength" sorter would add one more check to mitigate
 4.  **If the size or time has changed, the file is still being written to. Skip it for this run.**
 5.  If the size and time are identical after the delay, it's "stale" (no longer being written) and safe to process.
 
-
+## Bangbang  does **not** feat "stale file" logic. It relies on the operating system's file locking in order to prioritizes Maximum Throughput
 
 ## Summary
 
@@ -499,8 +499,7 @@ A more robust, "industrial-strength" sorter would add one more check to mitigate
 | **Active Download (Unlocked File)** | The script might move the incomplete file. | **Potentially problematic.** You could end up with a partial file in your library. This is less common. |
 | **Stale File Check** | Not implemented. | The script is simpler but relies entirely on OS locking for safety. |
 
-Bangbang  does **not** have a "stale file" logic. It relies on the operating system's file locking in order to prioritizes Maximum Throughput
-For its intended purpose, the current implementation is reasonably safe. The most common scenario (a locked file) is handled gracefully by the existing error-catching logic.
+## For its intended purpose, the current implementation is reasonably safe. The most common scenario (a locked file) is handled gracefully by the existing error-catching logic.
 
 ---
 📜 License
