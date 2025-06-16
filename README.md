@@ -441,11 +441,11 @@ By following these steps, the `cli.py` script will run reliably in the backgroun
 
 
 
-##
-### ⚠️ Should you be concerned if the script run while files are being written/usesd in your source dir?
-### :white_check_mark: Short anwser: no :wink:
 
-### The Most Likely (and Best) Scenario: File is Locked
+## ⚠️ Should you be concerned if the script run while files are being written/usesd in your source dir?
+## :white_check_mark: Short anwser: no :wink:
+
+## The Most Likely (and Best) Scenario: File is Locked
 
 1.  **File Writing Starts:** A download client (like a torrent client or a newsgroup downloader) starts writing a large file, `My.Big.Movie.mkv`, to the source directory. Most modern downloaders will pre-allocate the full file size but some write progressively. In either case, the file is "open" and being actively written to.
 
@@ -486,7 +486,7 @@ Some simpler programs or specific OS/filesystem combinations (more common on Lin
 
 This is generally undesirable as you end up with a corrupt/incomplete file in your library. However, it's less likely with modern download clients that are designed to handle this.
 
-### A Potential Improvement (The "Stale File" Check)
+## A Potential Improvement (The "Stale File" Check)
 
 A more robust, "industrial-strength" sorter would add one more check to mitigate both scenarios. This is often called a "stale file" check. Before attempting to process a file, it would do this:
 
@@ -498,7 +498,7 @@ A more robust, "industrial-strength" sorter would add one more check to mitigate
 
 Bangbang  **does not** currently have this "stale file" logic. It relies on the operating system's file locking.
 
-### Summary
+## Summary
 
 | Feature | How it's Handled | Outcome |
 | :--- | :--- | :--- |
