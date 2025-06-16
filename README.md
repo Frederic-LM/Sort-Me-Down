@@ -442,19 +442,14 @@ By following these steps, the `cli.py` script will run reliably in the backgroun
 
 
 
-## ⚠️ Should you be concerned if the script run while files are being written/usesd in your source dir?
-## :white_check_mark: Short anwser: no :wink:
+## ⚠️ Should you be concerned if the script run while files are being written/usesd in your source dir? Short anwser: no :wink:
 
 ## The Most Likely (and Best) Scenario: File is Locked
 
 1.  **File Writing Starts:** A download client (like a torrent client or a newsgroup downloader) starts writing a large file, `My.Big.Movie.mkv`, to the source directory. Most modern downloaders will pre-allocate the full file size but some write progressively. In either case, the file is "open" and being actively written to.
-
 2.  **OS File Locking:** Most operating systems (especially Windows) will place an **exclusive lock** on a file that is actively being written to. This means that other programs are prevented from moving, renaming, or deleting that file until the writing process is complete and the file is "closed" by the original program.
-
 3.  **The Sorter Scans:** The `MediaSorter` starts its `process_source_directory()` run. It finds `My.Big.Movie.mkv`.
-
 4.  **Classification:** The sorter can almost always read the filename (`My.Big.Movie.mkv`) even if the file is locked. It successfully cleans the name, sends it to the APIs, and correctly classifies it as a movie. Let's say it determines the destination should be `D:/Movies/My Big Movie (2023)/`.
-
 5.  **The Move Operation Fails (Gracefully):** The script's `FileManager` now tries to execute `shutil.move(".../My.Big.Movie.mkv", "D:/Movies/My Big Movie (2023)/")`.
     *   The operating system intervenes and says, "Access Denied" or "The process cannot access the file because it is being used by another process."
     *   The `shutil.move` command will raise an exception (e.g., `PermissionError` in Python).
@@ -469,17 +464,15 @@ By following these steps, the `cli.py` script will run reliably in the backgroun
     *   The `PermissionError` will be caught. The error counter will be incremented, and a detailed message will be logged to the console/log file, like: `ERROR moving file 'My.Big.Movie.mkv': [WinError 32] The process cannot access the file because it is being used by another process`.
 
 6.  **The Script Moves On:** The script will finish processing any other (unlocked) files in the directory and then resume its watch. The locked file, `My.Big.Movie.mkv`, is left untouched in the source directory.
-
 7.  **The Next Watch Cycle:**
     *   The download client finishes writing the file and **closes its lock**.
     *   The file is now complete and unlocked in the source directory.
     *   The `MediaSorter` does its next check. It will likely *not* see a change, because the folder's modification time was already updated when the file was *created*, not when it was *finished*. This is a minor weakness.
     *   **However, the next time *any other file* is added or removed from the source folder, it will trigger a full rescan.** On that rescan, the sorter will see `My.Big.Movie.mkv` again. This time, when it tries to move the file, the lock will be gone, and the move will succeed.
 
-### A Less Common Scenario: No File Lock
+## A Less Common Scenario: No File Lock
 
 Some simpler programs or specific OS/filesystem combinations (more common on Linux) might not place a hard lock on the file during writing. In this case:
-
 1.  The sorter finds the partially written file.
 2.  It classifies it and attempts the move.
 3.  The `shutil.move` command might actually succeed in moving the **incomplete file** to the destination.
@@ -496,7 +489,7 @@ A more robust, "industrial-strength" sorter would add one more check to mitigate
 4.  **If the size or time has changed, the file is still being written to. Skip it for this run.**
 5.  If the size and time are identical after the delay, it's "stale" (no longer being written) and safe to process.
 
-Bangbang  **does not** currently have this "stale file" logic. It relies on the operating system's file locking.
+
 
 ## Summary
 
@@ -506,6 +499,7 @@ Bangbang  **does not** currently have this "stale file" logic. It relies on the 
 | **Active Download (Unlocked File)** | The script might move the incomplete file. | **Potentially problematic.** You could end up with a partial file in your library. This is less common. |
 | **Stale File Check** | Not implemented. | The script is simpler but relies entirely on OS locking for safety. |
 
+Bangbang  does **not** have a "stale file" logic. It relies on the operating system's file locking in order to prioritizes Maximum Throughput
 For its intended purpose, the current implementation is reasonably safe. The most common scenario (a locked file) is handled gracefully by the existing error-catching logic.
 
 ---
