@@ -202,17 +202,11 @@ These can be used with any command.
 Your config.json file holds all the settings for the sorter.
 
     SOURCE_DIR: The folder where your unsorted media is located.
-
     ..._DIR: The destination library folders for each media type.
-
     MISMATCHED_DIR: Where to send files with conflicting metadata for manual review. If left blank, a _Mismatched folder will be created inside your SOURCE_DIR.
-
     FALLBACK_SHOW_DESTINATION: Default behavior for mismatched shows ("ignore", "mismatched", "tv", or "anime").
-
     OMDB_API_KEY: Your personal key from OMDb.
-
     SUPPORTED_EXTENSIONS: File types to be considered primary media files.
-
     SIDECAR_EXTENSIONS: File types (like subtitles or posters) to move alongside the primary media file.
 
 
@@ -514,9 +508,8 @@ Bangbang  **does not** currently have this "stale file" logic. It relies on the 
 
 For its intended purpose, the current implementation is reasonably safe. The most common scenario (a locked file) is handled gracefully by the existing error-catching logic.
 
-
+---
 📜 License
-
 This project is licensed under the Apache License 2.0 - see the LICENSE.md file for details.
 
 
