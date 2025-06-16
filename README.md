@@ -284,13 +284,166 @@ This method bundles the application and all its dependencies into a single file 
     >
     > A dialog will appear with an "Open" button that will allow you to run the application. This only needs to be done once.
 
+
+---
+## Run a Script BangBang as a Deamon
+
+### 2. For Linux/macOS: Using `systemd`
+
+`systemd` is the modern standard for managing services on most Linux distributions (Ubuntu, Debian, CentOS, Fedora, etc.).
+
+#### Step 1: Create a `systemd` Service File
+
+Create a file named `sortmedown.service` in `/etc/systemd/system/`. You'll need `sudo` permissions.
+
+`sudo nano /etc/systemd/system/sortmedown.service`
+
+Paste the following content into the file. **You must customize the paths and user.**
+
+```ini
+[Unit]
+Description=SortMeDown Media Sorter
+# This ensures the network is up before starting, which is good for the API calls.
+After=network.target
+
+[Service]
+# The user and group that will run the script. 
+# IMPORTANT: Do not use root unless absolutely necessary. Create a dedicated user or use your own.
+User=your_username
+Group=your_username
+
+# The absolute path to the directory containing cli.py and bangbang.py
+WorkingDirectory=/path/to/sortmedown/
+
+# The command to start the script.
+# Use the absolute path to your Python executable (especially if using a virtualenv)
+# and the absolute path to your script.
+# We add the --watch flag to run it in the correct mode.
+ExecStart=/path/to/your/venv/bin/python /path/to/your/sortmedown/cli.py --watch
+
+# Restart the service automatically if it fails.
+Restart=on-failure
+RestartSec=30
+
+# A friendly name for the logs
+SyslogIdentifier=sortmedown
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**How to find your Python path:**
+*   If using a virtual environment (recommended!), activate it and run `which python`.
+*   If using the system Python, run `which python3`.
+
+#### Step 2: Manage the Service
+
+Once the file is saved, you can use `systemctl` to control your new service.
+
+1.  **Reload `systemd`** to make it aware of the new file:
+    ```bash
+    sudo systemctl daemon-reload
+    ```
+
+2.  **Enable the service** to start automatically on boot:
+    ```bash
+    sudo systemctl enable sortmedown.service
+    ```
+
+3.  **Start the service** immediately:
+    ```bash
+    sudo systemctl start sortmedown.service
+    ```
+
+4.  **Check the status** to see if it's running correctly:
+    ```bash
+    sudo systemctl status sortmedown.service
+    ```
+    This command is your best friend. It will show you if the service is active, the latest log entries, and any errors.
+
+5.  **View the full logs:**
+    ```bash
+    sudo journalctl -u sortmedown.service -f
+    ```
+    (Use `-f` to follow the log in real-time).
+
+6.  **Stop the service:**
+    ```bash
+    sudo systemctl stop sortmedown.service
+    ```
+
+---
+
+### 3. For Windows: As a Windows Service
+
+Running a Python script as a Windows service is usualy a pain. The easiest method is to use a helper tool called **NSSM (the Non-Sucking Service Manager)**. It's a free, open-source utility that can turn any application into a service.
+
+#### Step 1: Download NSSM
+
+Go to the [NSSM website](https://nssm.cc/download) and download the latest version. Extract the `nssm.exe` file (choose the 64-bit or 32-bit version) and place it somewhere accessible, like `C:\NSSM\`. It's a good idea to add this folder to your system's PATH environment variable.
+
+#### Step 2: Install the Service
+
+Open a Command Prompt **as an Administrator**.
+
+1.  Navigate to the NSSM directory or use its full path to run the installer command. We'll name our service "SortMeDown".
+    ```cmd
+    C:\NSSM\nssm.exe install SortMeDown
+    ```
+
+2.  A graphical interface will pop up. Configure it as follows:
+
+    *   **Application Tab:**
+        *   **Path:** Click the `...` button and navigate to your Python executable (`python.exe`). If you are using a virtual environment, it will be inside the `Scripts` folder (e.g., `C:\path\to\venv\Scripts\python.exe`).
+        *   **Startup directory:** This is crucial. Set this to the folder where your `cli.py` and `config.json` are located (e.g., `C:\Users\You\Documents\SortMeDown`).
+        *   **Arguments:** Enter the name of your script and the `--watch` flag. You should use an absolute path for the config file for maximum reliability.
+          ```
+          cli.py --watch --config "C:\Users\You\Documents\SortMeDown\config.json"
+          ```
+
+    *   **Details Tab (Optional but good practice):**
+        *   **Display name:** `SortMeDown Media Sorter`
+        *   **Description:** `Monitors a directory and sorts media files automatically.`
+
+    *   **Log on Tab (Important):**
+        *   By default, it runs as the `Local System` account. This is usually fine, but if your media folders are on a network share, you may need to run the service as a specific user account that has access to that share. If so, select "This account" and enter the user credentials.
+
+    *   **I/O Tab (Optional):**
+        *   You can redirect the script's output (which NSSM captures) to a log file here if you wish, but your script's own logging to `bangbangSMD.log` is superior.
+
+3.  Click the **Install service** button. You should get a "Service 'SortMeDown' installed successfully!" message.
+
+#### Step 3: Manage the Service
+
+You can now manage the service from the Windows Services app (`services.msc`) or via the command line (as Administrator).
+
+*   **Start the service:**
+    ```cmd
+    sc start SortMeDown
+    ```
+    or
+    ```cmd
+    nssm start SortMeDown
+    ```
+
+*   **Stop the service:**
+    ```cmd
+    sc stop SortMeDown
+    ```
+
+*   **Check the status:**
+    ```cmd
+    sc query SortMeDown
+    ```
+
+*   **Remove the service:**
+    ```cmd
+    nssm remove SortMeDown
+    ```
+
+By following these steps, the `cli.py` script will run reliably in the background on both major operating systems, automatically starting with the machine and restarting on failure, making your media sorter a true "set-it-and-forget-it" utility.
     
-
-📜 License
-
-This project is licensed under the Apache License 2.0 - see the LICENSE.md file for details.
-
-
+---
 
 
 
@@ -360,4 +513,81 @@ Bangbang  **does not** currently have this "stale file" logic. It relies on the 
 | **Stale File Check** | Not implemented. | The script is simpler but relies entirely on OS locking for safety. |
 
 For its intended purpose, the current implementation is reasonably safe. The most common scenario (a locked file) is handled gracefully by the existing error-catching logic.
+
+
+
+
+##
+## ⚠️ Should you be concerned if the script run while files are being written/usesd in your source dir?
+## :white_check_mark: Short anwser: no :wink:
+
+## The Most Likely (and Best) Scenario: File is Locked
+
+1.  **File Writing Starts:** A download client (like a torrent client or a newsgroup downloader) starts writing a large file, `My.Big.Movie.mkv`, to the source directory. Most modern downloaders will pre-allocate the full file size but some write progressively. In either case, the file is "open" and being actively written to.
+
+2.  **OS File Locking:** Most operating systems (especially Windows) will place an **exclusive lock** on a file that is actively being written to. This means that other programs are prevented from moving, renaming, or deleting that file until the writing process is complete and the file is "closed" by the original program.
+
+3.  **The Sorter Scans:** The `MediaSorter` starts its `process_source_directory()` run. It finds `My.Big.Movie.mkv`.
+
+4.  **Classification:** The sorter can almost always read the filename (`My.Big.Movie.mkv`) even if the file is locked. It successfully cleans the name, sends it to the APIs, and correctly classifies it as a movie. Let's say it determines the destination should be `D:/Movies/My Big Movie (2023)/`.
+
+5.  **The Move Operation Fails (Gracefully):** The script's `FileManager` now tries to execute `shutil.move(".../My.Big.Movie.mkv", "D:/Movies/My Big Movie (2023)/")`.
+    *   The operating system intervenes and says, "Access Denied" or "The process cannot access the file because it is being used by another process."
+    *   The `shutil.move` command will raise an exception (e.g., `PermissionError` in Python).
+    *   **This is where the script's error handling becomes critical.** The `process_source_directory` function has this block:
+        ```python
+        try:
+            self.sort_item(file_path)
+        except Exception as e:
+            self.stats['errors'] += 1
+            logging.error(f"Fatal error processing '{file_path.name}': {e}", exc_info=True)
+        ```
+    *   The `PermissionError` will be caught. The error counter will be incremented, and a detailed message will be logged to the console/log file, like: `ERROR moving file 'My.Big.Movie.mkv': [WinError 32] The process cannot access the file because it is being used by another process`.
+
+6.  **The Script Moves On:** The script will finish processing any other (unlocked) files in the directory and then resume its watch. The locked file, `My.Big.Movie.mkv`, is left untouched in the source directory.
+
+7.  **The Next Watch Cycle:**
+    *   The download client finishes writing the file and **closes its lock**.
+    *   The file is now complete and unlocked in the source directory.
+    *   The `MediaSorter` does its next check. It will likely *not* see a change, because the folder's modification time was already updated when the file was *created*, not when it was *finished*. This is a minor weakness.
+    *   **However, the next time *any other file* is added or removed from the source folder, it will trigger a full rescan.** On that rescan, the sorter will see `My.Big.Movie.mkv` again. This time, when it tries to move the file, the lock will be gone, and the move will succeed.
+
+### A Less Common Scenario: No File Lock
+
+Some simpler programs or specific OS/filesystem combinations (more common on Linux) might not place a hard lock on the file during writing. In this case:
+
+1.  The sorter finds the partially written file.
+2.  It classifies it and attempts the move.
+3.  The `shutil.move` command might actually succeed in moving the **incomplete file** to the destination.
+
+This is generally undesirable as you end up with a corrupt/incomplete file in your library. However, it's less likely with modern download clients that are designed to handle this.
+
+## A Potential Improvement (The "Stale File" Check)
+
+A more robust, "industrial-strength" sorter would add one more check to mitigate both scenarios. This is often called a "stale file" check. Before attempting to process a file, it would do this:
+
+1.  Get the file's current size and modification time.
+2.  Wait for a short period (e.g., 10-30 seconds).
+3.  Get the file's size and modification time again.
+4.  **If the size or time has changed, the file is still being written to. Skip it for this run.**
+5.  If the size and time are identical after the delay, it's "stale" (no longer being written) and safe to process.
+
+Bangbang  **does not** currently have this "stale file" logic. It relies on the operating system's file locking.
+
+## Summary
+
+| Feature | How it's Handled | Outcome |
+| :--- | :--- | :--- |
+| **Active Download (Locked File)** | The `shutil.move` operation fails due to an OS lock. | **Safe.** An error is logged, the file is skipped, and it will be picked up on a future scan. |
+| **Active Download (Unlocked File)** | The script might move the incomplete file. | **Potentially problematic.** You could end up with a partial file in your library. This is less common. |
+| **Stale File Check** | Not implemented. | The script is simpler but relies entirely on OS locking for safety. |
+
+For its intended purpose, the current implementation is reasonably safe. The most common scenario (a locked file) is handled gracefully by the existing error-catching logic.
+
+
+📜 License
+
+This project is licensed under the Apache License 2.0 - see the LICENSE.md file for details.
+
+
 
