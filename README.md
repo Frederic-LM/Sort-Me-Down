@@ -489,7 +489,7 @@ Before attempting to process a file, teh script would do this:
 4.  **If the size or time has changed, the file is still being written to. Skip it for this run.**
 5.  If the size and time are identical after the delay, it's "stale" (no longer being written) and safe to process.
 
-## Bangbang  does **not** feat "stale file" logic. It relies on the operating system's file locking in order to prioritizes Maximum Throughput
+### Bangbang  does NOT feature a  "stale file" logic. It relies on the operating system's file locking in order to prioritizes Maximum Throughput
 
 ### Summary
 
