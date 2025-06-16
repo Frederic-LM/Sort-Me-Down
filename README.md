@@ -442,9 +442,9 @@ By following these steps, the `cli.py` script will run reliably in the backgroun
 
 
 
-## ⚠️ Should you be concerned if the script run while files are being written ? Short anwser: no :wink:
+### ⚠️ Should you be concerned if the script run while files are being written ? Short anwser: no :wink:
 
-## The Most Likely (and Best) Scenario: File is Locked
+### The Most Likely (and Best) Scenario: File is Locked
 
 1.  **File Writing Starts:** A download client (like a torrent client or a newsgroup downloader) starts writing a large file, `My.Big.Movie.mkv`, to the source directory. Most modern downloaders will pre-allocate the full file size but some write progressively. In either case, the file is "open" and being actively written to.
 2.  **OS File Locking:** Most operating systems (especially Windows) will place an **exclusive lock** on a file that is actively being written to. This means that other programs are prevented from moving, renaming, or deleting that file until the writing process is complete and the file is "closed" by the original program.
@@ -470,7 +470,7 @@ By following these steps, the `cli.py` script will run reliably in the backgroun
     *   The `MediaSorter` does its next check. It will likely *not* see a change, because the folder's modification time was already updated when the file was *created*, not when it was *finished*. This is a minor weakness.
     *   **However, the next time *any other file* is added or removed from the source folder, it will trigger a full rescan.** On that rescan, the sorter will see `My.Big.Movie.mkv` again. This time, when it tries to move the file, the lock will be gone, and the move will succeed.
 
-## A Less Common Scenario: No File Lock
+### A Less Common Scenario: No File Lock
 
 Some simpler programs or specific OS/filesystem combinations (more common on Linux) might not place a hard lock on the file during writing. In this case:
 1.  The sorter finds the partially written file.
@@ -491,7 +491,7 @@ Before attempting to process a file, teh script would do this:
 
 ## Bangbang  does **not** feat "stale file" logic. It relies on the operating system's file locking in order to prioritizes Maximum Throughput
 
-## Summary
+### Summary
 
 | Feature | How it's Handled | Outcome |
 | :--- | :--- | :--- |
@@ -499,10 +499,10 @@ Before attempting to process a file, teh script would do this:
 | **Active Download (Unlocked File)** | The script might move the incomplete file. | **Potentially problematic.** You could end up with a partial file in your library. This is less common. |
 | **Stale File Check** | Not implemented. | The script is simpler but relies entirely on OS locking for safety. |
 
-## For its intended purpose, the current implementation is reasonably safe. The most common scenario (a locked file) is handled gracefully by the existing error-catching logic.
+### For its intended purpose, the current implementation is reasonably safe. The most common scenario (a locked file) is handled gracefully by the existing error-catching logic.
 
----
-📜 License
+
+## 📜 License
 This project is licensed under the Apache License 2.0 - see the LICENSE.md file for details.
 
 
