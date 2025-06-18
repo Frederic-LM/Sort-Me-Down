@@ -1,509 +1,382 @@
 # SortMeDown & BangBang
+
 <div align="center">
 
-```python      
-#    ██████  ▒█████   ██▀███  ▄▄▄█████▓    ███▄ ▄███▓▓█████    ▓█████▄  ▒█████   █     █░███▄    █ 
-#  ▒██    ▒ ▒██▒  ██▒▓██ ▒ ██▒▓  ██▒ ▓▒   ▓██▒▀█▀ ██▒▓█   ▀    ▒██▀ ██▌▒██▒  ██▒▓█░ █ ░█░██ ▀█   █ 
-#  ░ ▓██▄   ▒██░  ██▒▓██ ░▄█ ▒▒ ▓██░ ▒░   ▓██    ▓██░▒███      ░██   █▌▒██░  ██▒▒█░ █ ░█▓██  ▀█ ██▒
-#    ▒   ██▒▒██   ██░▒██▀▀█▄  ░ ▓██▓ ░    ▒██    ▒██ ▒▓█  ▄    ░▓█▄   ▌▒██   ██░░█░ █ ░█▓██▒  ▐▌██▒
-#  ▒██████▒▒░ ████▓▒░░██▓ ▒██▒  ▒██▒ ░    ▒██▒   ░██▒░▒████▒   ░▒████▓ ░ ████▓▒░░░██▒██▓▒██░   ▓██░
-#  ▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░      ░ ▒░   ░  ░░░ ▒░ ░    ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
-#  ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░       ░  ░      ░ ░ ░  ░    ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
-#  ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
-#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░      6.0.1 ░
-#                                                                ░
 ```
-    
+    ██████  ▒█████   ██▀███  ▄▄▄█████▓    ███▄ ▄███▓▓█████    ▓█████▄  ▒█████   █     █░███▄    █ 
+  ▒██    ▒ ▒██▒  ██▒▓██ ▒ ██▒▓  ██▒ ▓▒   ▓██▒▀█▀ ██▒▓█   ▀    ▒██▀ ██▌▒██▒  ██▒▓█░ █ ░█░██ ▀█   █ 
+  ░ ▓██▄   ▒██░  ██▒▓██ ░▄█ ▒▒ ▓██░ ▒░   ▓██    ▓██░▒███      ░██   █▌▒██░  ██▒▒█░ █ ░█▓██  ▀█ ██▒
+    ▒   ██▒▒██   ██░▒██▀▀█▄  ░ ▓██▓ ░    ▒██    ▒██ ▒▓█  ▄    ░▓█▄   ▌▒██   ██░░█░ █ ░█▓██▒  ▐▌██▒
+  ▒██████▒▒░ ████▓▒░░██▓ ▒██▒  ▒██▒ ░    ▒██▒   ░██▒░▒████▒   ░▒████▓ ░ ████▓▒░░░██▒██▓▒██░   ▓██░
+  ▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░      ░ ▒░   ░  ░░░ ▒░ ░    ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
+  ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░       ░  ░      ░ ░ ░  ░    ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
+  ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
+        ░      ░ ░      ░                        ░      ░  ░      ░        ░ ░      ░        ░   
+                     CLI Media Sorter Script                                           v6.0.1
+```
 
+**A powerful, configurable media sorter with both GUI and CLI interfaces**
 
-A powerful, configurable media sorter with both a GUI and CLI.
+![Python](https://img.shields.io/badge/python-3.9+-blue.svg?style=flat-square&logo=python&logoColor=white)
+[![License](https://img.shields.io/badge/License-Apache_2.0-green.svg?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
+![Platform](https://img.shields.io/badge/platform-Windows%20|%20macOS%20|%20Linux-lightgrey.svg?style=flat-square)
+![Status](https://img.shields.io/badge/status-Active-brightgreen.svg?style=flat-square)
+
 </div>
 
+---
 
-![Language](https://img.shields.io/badge/python-3.9+-blue.svg) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+## 🌟 Overview
 
+SortMeDown automatically organizes your movies, TV shows, and anime into a clean, structured library. It fetches metadata from OMDb and AniList to correctly identify and rename your files, then moves them to your specified library directories with intelligent conflict resolution.
 
-SortMeDown automatically organizes your movies, TV shows, and anime into a clean, structured library. It fetches metadata from OMDb and AniList to correctly identify and rename your files, then moves them to your specified library directories.
-✨ Key Features
+## ✨ Key Features
 
-    🤖 Automatic Sorting: Intelligently detects and sorts Movies, TV Series, Anime Movies, and Anime Series.
+<table>
+<tr>
+<td width="50%">
 
-    🎭 Dual Interfaces: Choose between a user-friendly Graphical User Interface (GUI) or a powerful Command-Line Interface (CLI).
+### 🎯 **Smart Organization**
+- 🤖 **Automatic Detection** - Movies, TV Series, Anime Movies & Series
+- 🧠 **Intelligent Conflict Resolution** - Compares filenames to API results
+- 📂 **Configurable Fallbacks** - Handle mismatched files your way
+- 🇫🇷 **Language Support** - Route French content to dedicated directories
 
-    🧠 Intelligent Conflict Resolution: Compares filenames to API results to detect mismatches (e.g., wrong year, series vs. movie) and handles them based on your rules.
+</td>
+<td width="50%">
 
-    📂 Configurable Fallbacks: You decide what to do with mismatched files: move them to a review folder, a default library, or leave them in place.
+### 🚀 **Powerful Interfaces**
+- 🎭 **Dual Modes** - GUI for ease, CLI for power users
+- ⏱️ **Watch Mode** - Monitor folders for new files automatically
+- 🧪 **Dry-Run Mode** - Preview operations safely
+- 🛠️ **Clean Architecture** - UI-agnostic core engine
 
-    ⏱️ Watch Mode: Automatically monitors your source folder and processes new files as they arrive.
+</td>
+</tr>
+</table>
 
-    🧪 Safe Dry-Run Mode: Preview all file operations without actually moving or renaming anything.
+---
 
-    🇫🇷 French Language Support: Optionally route French-language movies to a dedicated directory.
+## 📸 Screenshots
 
-    🛠️ Clean Architecture: Built on a UI-agnostic core engine (bangbang.py) that can be controlled by any frontend.
-
-🖼️ Screenshots
-Example GUI Layout:
-
+### GUI Interface
+<div align="center">
 
 ![Screenshot_rc1](https://github.com/user-attachments/assets/124c35b8-86cc-41d6-967e-8c16ec6893b0)
 
+</div>
 
-⚙️ Installation & Setup
+### CLI Interface
+<div align="center">
 
-Follow these steps to get SortMeDown up and running.
+<img width="724" alt="CLI Interface" src="https://github.com/user-attachments/assets/2e422370-5867-411b-8d40-b1cd48d12f8a" />
 
-1. Clone the Repository
+</div>
 
-      
+---
+
+## 🚀 Quick Start
+
+### 1️⃣ Clone & Install
+
+```bash
+# Clone the repository
 git clone https://github.com/Frederic-LM/Sort-Me-Down.git
-
 cd Sort-Me-Down
 
-    
+# Install dependencies
+pip install -r requirements.txt
+```
 
-2. Install Dependencies
+### 2️⃣ Get Your API Key
 
-The GUI has a few dependencies. You can install them using the provided requirements.txt file.
-      
-  pip install -r requirements.txt
+> 🔑 **Free OMDb API Key Required**
+> 
+> 1. Visit [omdbapi.com/apikey.aspx](http://www.omdbapi.com/apikey.aspx)
+> 2. Select the **FREE** plan
+> 3. Enter your email
+> 4. Check your inbox for the API key
 
-# Manual installation:
-pip install requests customtkinter pystray Pillow
+### 3️⃣ Initial Configuration
 
-    
-3. Get an OMDb API Key
-
-This project requires a free API key from the OMDb (Open Movie Database).
-
-    Go to http://www.omdbapi.com/apikey.aspx
-
-    Select the "FREE" plan and enter your email.
-
-    You will receive your API key via email.
-
-4. Create Your Configuration
-
-The easiest way to create your configuration file is to run either the GUI or CLI once.
-
-      
+```bash
+# Run once to create default config
 python gui.py
 # OR
 python cli.py
+```
 
-    
+### 4️⃣ Configure Your Paths
 
+Edit the generated `config.json`:
 
-The application will detect that config.json is missing and create a default one for you.
-
-5. Edit config.json
-
-Open the newly created config.json file and fill in the required paths and your API key.
-
-Here is a minimal sample:
-      
 ```json
 {
-
-    
     "SOURCE_DIR": "C:/Path/To/Your/Downloads",
     "MOVIES_DIR": "D:/Media/Movies",
     "TV_SHOWS_DIR": "D:/Media/TV Shows",
     "ANIME_MOVIES_DIR": "D:/Media/Anime Movies",
     "ANIME_SERIES_DIR": "D:/Media/Anime Series",
     "MISMATCHED_DIR": "C:/Path/To/Your/Downloads/_Mismatched",
-    "OMDB_API_KEY": "your_omdb_api_key_here",
-   
+    "OMDB_API_KEY": "your_omdb_api_key_here"
 }
 ```
 
-    
+> 💡 **Windows Users**: Use forward slashes `/` or double backslashes `\\` in paths
 
-    Note: For Windows paths, use forward slashes (/) or double backslashes (\\) to avoid issues.
+---
 
-🚀 Usage
+## 🎮 Usage
 
-You can run the application using either the GUI or the CLI.
-Graphical User Interface (GUI)
+### 🖼️ Graphical Interface
 
-The GUI provides an easy-to-use interface for all settings and actions.
-    
-python gui.py
-
-   
-    Actions Tab: Start a one-time sort, enable watch mode, and configure fallback behavior.
-
-    Settings Tab: Configure all your library paths, API key, and other advanced options.
-
-# Command-Line Interface (CLI)
-
-The CLI provides a powerful way to run the sorter from a terminal or in automated scripts. It uses an action-based structure, meaning you always tell the script what you want to do. The primary commands are `sort` and `watch`.
-
-All settings are read from `config.json` by default. You can use the GUI to configure these settings easily, then use the CLI to execute the tasks.
-
-## 🖼️ Screenshots
-
-<img width="724" alt="cliv6" src="https://github.com/user-attachments/assets/2e422370-5867-411b-8d40-b1cd48d12f8a" />
-
-## 📦 Basic Commands
+Perfect for beginners and occasional users:
 
 ```bash
-# Perform a single, one-time sort using settings from your config.json
+python gui.py
+```
+
+**Features:**
+- **Actions Tab** - Start sorting, enable watch mode, configure fallbacks
+- **Settings Tab** - Manage library paths, API keys, and advanced options
+- **Real-time Status** - See what's happening as it happens
+
+### 💻 Command Line Interface
+
+Ideal for power users and automation:
+
+#### Basic Commands
+
+```bash
+# One-time sort using config.json settings
 python cli.py sort
 
-# Start the watchdog to monitor the source directory for new files
+# Monitor directory for new files
 python cli.py watch
 
-# Do a "dry run" to see what would happen without moving any files
+# Preview operations without moving files
 python cli.py sort --dry-run
 ```
 
+#### Advanced Usage
 
-
-## 📘 All CLI Arguments
-
-Arguments are specific to the command you are running.
-These can be used with any command.
+<details>
+<summary><strong>📖 Click to expand full CLI reference</strong></summary>
 
 ### Global Arguments
+| Argument | Description | Example |
+|----------|-------------|---------|
+| `--help` | Show help message | `python cli.py sort --help` |
+| `--version` | Show program version | `python cli.py --version` |
+| `--config [PATH]` | Use specific config file | `python cli.py sort --config /path/to/config.json` |
 
-| Argument          | Description                 | Example                                          |
-| ----------------- | --------------------------- | ------------------------------------------------ |
-| `--help`          | Show the help message.      | `python cli.py sort --help`                      |
-| `--version`       | Show the program version.   | `python cli.py --version`                        |
-| `--config [PATH]` | Use a specific config file. | `python cli.py sort --config C:/alt_config.json` |
+### Sort Command Options
+```bash
+python cli.py sort [OPTIONS]
+```
 
+| Argument | Description | Example |
+|----------|-------------|---------|
+| `--dry-run` | Simulate without moving files | `python cli.py sort --dry-run` |
+| `--tmdb` | Use TMDB as primary API | `python cli.py sort --tmdb` |
+| `--split-languages` | Split languages into folders | `python cli.py sort --split-languages "fr,de"` |
+| `--cleanup-in-place` | Organize within source folder | `python cli.py sort --cleanup-in-place` |
+| `--mismatched-dir` | Override mismatched directory | `python cli.py sort --mismatched-dir "D:/Review"` |
+| `--fallback [choice]` | Fallback behavior for mismatches | `python cli.py sort --fallback tv` |
 
+### Watch Command Options
+```bash
+python cli.py watch [OPTIONS]
+```
 
-### `python cli.py sort [OPTIONS]`
+| Argument | Description | Example |
+|----------|-------------|---------|
+| `--dry-run` | Run watchdog in simulation mode | `python cli.py watch --dry-run` |
+| `--watch-interval [MIN]` | Override check interval | `python cli.py watch --watch-interval 5` |
 
-| Argument              | Description                                                                                                                               | Example                                           |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `--dry-run`           | Simulate the sort without moving/deleting any files.                                                                                      | `python cli.py sort --dry-run`                    |
-| `--tmdb`              | Use TMDB as the primary API provider for this run.                                                                                        | `python cli.py sort --tmdb`                       |
-| `--split-languages`   | Override the languages to split into a separate movie folder. Can be a comma-separated list (`fr,es`) or `all` for any non-English movie. | `python cli.py sort --split-languages "fr,de"`    |
-| `--cleanup-in-place`  | Organize files within the source folder instead of moving them to library directories.                                                    | `python cli.py sort --cleanup-in-place`           |
-| `--mismatched-dir`    | Override the directory for mismatched files for this run.                                                                                 | `python cli.py sort --mismatched-dir "D:/Review"` |
-| `--fallback [choice]` | Override the fallback behavior for mismatched shows. <br> Choices: `ignore`, `mismatched`, `tv`, `anime`.                                 | `python cli.py sort --fallback tv`                |
-
-
-
-### `python cli.py watch [OPTIONS]`
-
-| Argument                 | Description                                                                             | Example                                  |
-| ------------------------ | --------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `--dry-run`              | Run the watchdog in simulation mode. All detected files will be processed as a dry run. | `python cli.py watch --dry-run`          |
-| `--watch-interval [MIN]` | Override the watch mode check interval in minutes.                                      | `python cli.py watch --watch-interval 5` |
-
----
-
-## 🔧 Configuration Details
-
-Your config.json file holds all the settings for the sorter.
-
-    SOURCE_DIR: The folder where your unsorted media is located.
-    ..._DIR: The destination library folders for each media type.
-    MISMATCHED_DIR: Where to send files with conflicting metadata for manual review. If left blank, a _Mismatched folder will be created inside your SOURCE_DIR.
-    FALLBACK_SHOW_DESTINATION: Default behavior for mismatched shows ("ignore", "mismatched", "tv", or "anime").
-    OMDB_API_KEY: Your personal key from OMDb.
-    SUPPORTED_EXTENSIONS: File types to be considered primary media files.
-    SIDECAR_EXTENSIONS: File types (like subtitles or posters) to move alongside the primary media file.
-
-
-# Option : Compiling into a Standalone Executable
-
-This method bundles the application and all its dependencies into a single file that can be run on other computers without needing to install Python.
-
-#### Prerequisites
-
-1.  **Install PyInstaller:** This tool is used to create the executable.
-    ```bash
-    pip install pyinstaller
-    ```
-2.  **Prepare Project Files:**
-    Ensure your project directory is clean and contains the necessary files. You will also need an icon file appropriate for your operating system.
-    ```
-    your-project-folder/
-    ├── gui.py
-    ├── bangbang.py
-    └── icon.ico  (for Windows) OR icon.icns (for macOS)
-    └── icon.png 
-    ```
+</details>
 
 ---
 
-#### For Windows (.exe)
+## ⚙️ Configuration
 
-1.  **Run the PyInstaller Command:**
-    Open a command prompt or terminal in your project directory and execute the following command:
-    ```bash
-    pyinstaller --onefile --windowed --hidden-import="pystray._win32" --add-data "icon.ico;." --add-data "icon.png;." --icon="icon.ico" --name="Short-Me-Down" gui.py
-    ```
-2.  **Find Your Executable:**
-    After the process completes, a `dist` folder will be created. Inside this folder, you will find your final `Short-Me-Down.exe` file. This file can be shared and run on Windows machine.
+<details>
+<summary><strong>🔧 Click to see all configuration options</strong></summary>
+
+### Core Settings
+- **`SOURCE_DIR`** - Folder with unsorted media
+- **`MOVIES_DIR`** - Destination for movies
+- **`TV_SHOWS_DIR`** - Destination for TV series
+- **`ANIME_MOVIES_DIR`** - Destination for anime movies
+- **`ANIME_SERIES_DIR`** - Destination for anime series
+- **`MISMATCHED_DIR`** - Files with conflicting metadata
+
+### API & Behavior
+- **`OMDB_API_KEY`** - Your OMDb API key
+- **`FALLBACK_SHOW_DESTINATION`** - Default for mismatched shows (`"ignore"`, `"mismatched"`, `"tv"`, or `"anime"`)
+
+### File Types
+- **`SUPPORTED_EXTENSIONS`** - Primary media file types
+- **`SIDECAR_EXTENSIONS`** - Files to move with media (subtitles, posters, etc.)
+
+</details>
+
+---
+
+## 📦 Building Executables
+
+<details>
+<summary><strong>🏗️ Create standalone executables</strong></summary>
+
+### Prerequisites
+```bash
+pip install pyinstaller
+```
+
+### Windows (.exe)
+```bash
+pyinstaller --onefile --windowed --hidden-import="pystray._win32" \
+    --add-data "icon.ico;." --add-data "icon.png;." \
+    --icon="icon.ico" --name="Sort-Me-Down" gui.py
+```
+
+### macOS (.app)
+> ⚠️ **Must be compiled on macOS**
+
+```bash
+pyinstaller --onefile --windowed --name="Sort-Me-Down" \
+    --hidden-import="pystray._win32" --icon="icon.ico" \
+    --add-data="icon.ico;." --add-data="icon.png;." gui.py
+```
+
+> 🛡️ **macOS Security**: First run requires right-click → "Open" to bypass Gatekeeper
+
+</details>
 
 ---
 
-#### For macOS (.app)
+## 🤖 Running as a Service/Daemon
 
-> **Important:** You must compile the macOS application **on a macOS machine**.
+<details>
+<summary><strong>⚙️ Set up automatic background processing</strong></summary>
 
-1.  **Install Prerequisites (on a Mac):**
-    If you don't have them, install Homebrew and the required Python packages via the Terminal.
-    ```bash
-    # Install Homebrew (if not already installed)
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+### Linux/macOS (systemd)
 
-    # Install Python and dependencies
-    brew install python
-    pip3 install pyinstaller customtkinter requests pystray
-    ```
-2.  **Prepare Icon:**
-    Make sure you have an `icon.icns` file for your application icon.
-
-3.  **Run the PyInstaller Command:**
-    In your project directory, execute the following command:
-    ```bash
-    pyinstaller --onefile --windowed --name="Sort-Me-Down" --hidden-import="pystray._win32" --icon="icon.ico" --add-data="icon.ico;." --add-data="icon.png;." --name="Short-Me-Down" gui.py
-
-    ```
-
-4.  **Find and Run Your Application:**
-    The `dist` folder will contain your final `Short-Me-Down.app` bundle.
-
-    > **Gatekeeper Security Warning (CRITICAL!)**
-    > The first time you run the app, macOS will likely block it as it's from an "unidentified developer."
-    >
-    > **To run it, you must right-click the `Short-Me-Down.app` file and select "Open" from the context menu.**
-    >
-    > A dialog will appear with an "Open" button that will allow you to run the application. This only needs to be done once.
-
-
----
-## Run a Script BangBang as a Deamon
-
-### 2. For Linux/macOS: Using `systemd`
-
-`systemd` is the modern standard for managing services on most Linux distributions (Ubuntu, Debian, CentOS, Fedora, etc.).
-
-#### Step 1: Create a `systemd` Service File
-
-Create a file named `sortmedown.service` in `/etc/systemd/system/`. You'll need `sudo` permissions.
-
-`sudo nano /etc/systemd/system/sortmedown.service`
-
-Paste the following content into the file. **You must customize the paths and user.**
+Create `/etc/systemd/system/sortmedown.service`:
 
 ```ini
 [Unit]
 Description=SortMeDown Media Sorter
-# This ensures the network is up before starting, which is good for the API calls.
 After=network.target
 
 [Service]
-# The user and group that will run the script. 
-# IMPORTANT: Do not use root unless absolutely necessary. Create a dedicated user or use your own.
 User=your_username
 Group=your_username
-
-# The absolute path to the directory containing cli.py and bangbang.py
 WorkingDirectory=/path/to/sortmedown/
-
-# The command to start the script.
-# Use the absolute path to your Python executable (especially if using a virtualenv)
-# and the absolute path to your script.
-# We add the --watch flag to run it in the correct mode.
-ExecStart=/path/to/your/venv/bin/python /path/to/your/sortmedown/cli.py --watch
-
-# Restart the service automatically if it fails.
+ExecStart=/path/to/python /path/to/cli.py watch
 Restart=on-failure
 RestartSec=30
-
-# A friendly name for the logs
 SyslogIdentifier=sortmedown
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-**How to find your Python path:**
-*   If using a virtual environment (recommended!), activate it and run `which python`.
-*   If using the system Python, run `which python3`.
+**Manage the service:**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable sortmedown.service
+sudo systemctl start sortmedown.service
+sudo systemctl status sortmedown.service
+```
 
-#### Step 2: Manage the Service
+### Windows (NSSM)
 
-Once the file is saved, you can use `systemctl` to control your new service.
+1. **Download [NSSM](https://nssm.cc/download)**
+2. **Install as service:**
+   ```cmd
+   nssm.exe install SortMeDown
+   ```
+3. **Configure in the GUI:**
+   - **Path**: Your Python executable
+   - **Arguments**: `cli.py watch --config "C:\path\to\config.json"`
+   - **Startup directory**: Your project folder
 
-1.  **Reload `systemd`** to make it aware of the new file:
-    ```bash
-    sudo systemctl daemon-reload
-    ```
+**Manage the service:**
+```cmd
+sc start SortMeDown
+sc stop SortMeDown
+sc query SortMeDown
+```
 
-2.  **Enable the service** to start automatically on boot:
-    ```bash
-    sudo systemctl enable sortmedown.service
-    ```
-
-3.  **Start the service** immediately:
-    ```bash
-    sudo systemctl start sortmedown.service
-    ```
-
-4.  **Check the status** to see if it's running correctly:
-    ```bash
-    sudo systemctl status sortmedown.service
-    ```
-    This command is your best friend. It will show you if the service is active, the latest log entries, and any errors.
-
-5.  **View the full logs:**
-    ```bash
-    sudo journalctl -u sortmedown.service -f
-    ```
-    (Use `-f` to follow the log in real-time).
-
-6.  **Stop the service:**
-    ```bash
-    sudo systemctl stop sortmedown.service
-    ```
+</details>
 
 ---
 
-### 3. For Windows: As a Windows Service
+## 🛡️ File Safety
 
-Running a Python script as a Windows service is usualy a pain. The easiest method is to use a helper tool called **NSSM (the Non-Sucking Service Manager)**. It's a free, open-source utility that can turn any application into a service.
+### How SortMeDown Handles Active Downloads
 
-#### Step 1: Download NSSM
+<details>
+<summary><strong>🔒 Click to understand the safety mechanisms</strong></summary>
 
-Go to the [NSSM website](https://nssm.cc/download) and download the latest version. Extract the `nssm.exe` file (choose the 64-bit or 32-bit version) and place it somewhere accessible, like `C:\NSSM\`. It's a good idea to add this folder to your system's PATH environment variable.
+**The Most Common (Safe) Scenario:**
 
-#### Step 2: Install the Service
+1. **Download in Progress** → OS locks the file
+2. **SortMeDown Scans** → Finds and classifies the file
+3. **Move Attempt** → OS denies access (file locked)
+4. **Graceful Handling** → Error logged, file skipped
+5. **Download Completes** → Lock released
+6. **Next Scan** → File successfully processed
 
-Open a Command Prompt **as an Administrator**.
+**Key Safety Features:**
+- ✅ **OS File Locking** - Prevents moving incomplete files
+- ✅ **Error Handling** - Gracefully handles locked files
+- ✅ **Retry Logic** - Picks up files on subsequent scans
+- ✅ **Detailed Logging** - Track what happens and why
 
-1.  Navigate to the NSSM directory or use its full path to run the installer command. We'll name our service "SortMeDown".
-    ```cmd
-    C:\NSSM\nssm.exe install SortMeDown
-    ```
+**Why No "Stale File" Check?**
+SortMeDown prioritizes **maximum throughput** over additional safety checks, relying on robust OS-level file locking for protection. This approach handles 99% of real-world scenarios effectively.
 
-2.  A graphical interface will pop up. Configure it as follows:
+</details>
 
-    *   **Application Tab:**
-        *   **Path:** Click the `...` button and navigate to your Python executable (`python.exe`). If you are using a virtual environment, it will be inside the `Scripts` folder (e.g., `C:\path\to\venv\Scripts\python.exe`).
-        *   **Startup directory:** This is crucial. Set this to the folder where your `cli.py` and `config.json` are located (e.g., `C:\Users\You\Documents\SortMeDown`).
-        *   **Arguments:** Enter the name of your script and the `--watch` flag. You should use an absolute path for the config file for maximum reliability.
-          ```
-          cli.py --watch --config "C:\Users\You\Documents\SortMeDown\config.json"
-          ```
-
-    *   **Details Tab (Optional but good practice):**
-        *   **Display name:** `SortMeDown Media Sorter`
-        *   **Description:** `Monitors a directory and sorts media files automatically.`
-
-    *   **Log on Tab (Important):**
-        *   By default, it runs as the `Local System` account. This is usually fine, but if your media folders are on a network share, you may need to run the service as a specific user account that has access to that share. If so, select "This account" and enter the user credentials.
-
-    *   **I/O Tab (Optional):**
-        *   You can redirect the script's output (which NSSM captures) to a log file here if you wish, but your script's own logging to `bangbangSMD.log` is superior.
-
-3.  Click the **Install service** button. You should get a "Service 'SortMeDown' installed successfully!" message.
-
-#### Step 3: Manage the Service
-
-You can now manage the service from the Windows Services app (`services.msc`) or via the command line (as Administrator).
-
-*   **Start the service:**
-    ```cmd
-    sc start SortMeDown
-    ```
-    or
-    ```cmd
-    nssm start SortMeDown
-    ```
-
-*   **Stop the service:**
-    ```cmd
-    sc stop SortMeDown
-    ```
-
-*   **Check the status:**
-    ```cmd
-    sc query SortMeDown
-    ```
-
-*   **Remove the service:**
-    ```cmd
-    nssm remove SortMeDown
-    ```
-
-By following these steps, the `cli.py` script will run reliably in the background on both major operating systems, automatically starting with the machine and restarting on failure, making your media sorter a true "set-it-and-forget-it" utility.
-    
 ---
 
+## 🆘 Troubleshooting
 
+<details>
+<summary><strong>🐛 Common issues and solutions</strong></summary>
 
+### API Issues
+- **"Invalid API Key"** → Verify your OMDb key in `config.json`
+- **"API Limit Exceeded"** → Wait for reset or upgrade your OMDb plan
 
-### ⚠️ Should you be concerned if the script run while files are being written ? Short anwser: no :wink:
+### File Operations
+- **"Permission Denied"** → Check folder permissions and file locks
+- **"Path Not Found"** → Verify all paths in `config.json` exist
 
-### The Most Likely (and Best) Scenario: File is Locked
+### Configuration
+- **"Config Not Found"** → Run the application once to generate default config
+- **Windows Path Issues** → Use forward slashes `/` or double backslashes `\\`
 
-1.  **File Writing Starts:** A download client (like a torrent client or a newsgroup downloader) starts writing a large file, `My.Big.Movie.mkv`, to the source directory. Most modern downloaders will pre-allocate the full file size but some write progressively. In either case, the file is "open" and being actively written to.
-2.  **OS File Locking:** Most operating systems (especially Windows) will place an **exclusive lock** on a file that is actively being written to. This means that other programs are prevented from moving, renaming, or deleting that file until the writing process is complete and the file is "closed" by the original program.
-3.  **The Sorter Scans:** The `MediaSorter` starts its `process_source_directory()` run. It finds `My.Big.Movie.mkv`.
-4.  **Classification:** The sorter can almost always read the filename (`My.Big.Movie.mkv`) even if the file is locked. It successfully cleans the name, sends it to the APIs, and correctly classifies it as a movie. Let's say it determines the destination should be `D:/Movies/My Big Movie (2023)/`.
-5.  **The Move Operation Fails (Gracefully):** The script's `FileManager` now tries to execute `shutil.move(".../My.Big.Movie.mkv", "D:/Movies/My Big Movie (2023)/")`.
-    *   The operating system intervenes and says, "Access Denied" or "The process cannot access the file because it is being used by another process."
-    *   The `shutil.move` command will raise an exception (e.g., `PermissionError` in Python).
-    *   **This is where the script's error handling becomes critical.** The `process_source_directory` function has this block:
-        ```python
-        try:
-            self.sort_item(file_path)
-        except Exception as e:
-            self.stats['errors'] += 1
-            logging.error(f"Fatal error processing '{file_path.name}': {e}", exc_info=True)
-        ```
-    *   The `PermissionError` will be caught. The error counter will be incremented, and a detailed message will be logged to the console/log file, like: `ERROR moving file 'My.Big.Movie.mkv': [WinError 32] The process cannot access the file because it is being used by another process`.
+### Performance
+- **Slow Processing** → API rate limits are normal, consider TMDB option
+- **High Memory Usage** → Large directories may require system resources
 
-6.  **The Script Moves On:** The script will finish processing any other (unlocked) files in the directory and then resume its watch. The locked file, `My.Big.Movie.mkv`, is left untouched in the source directory.
-7.  **The Next Watch Cycle:**
-    *   The download client finishes writing the file and **closes its lock**.
-    *   The file is now complete and unlocked in the source directory.
-    *   The `MediaSorter` does its next check. It will likely *not* see a change, because the folder's modification time was already updated when the file was *created*, not when it was *finished*. This is a minor weakness.
-    *   **However, the next time *any other file* is added or removed from the source folder, it will trigger a full rescan.** On that rescan, the sorter will see `My.Big.Movie.mkv` again. This time, when it tries to move the file, the lock will be gone, and the move will succeed.
+</details>
 
-### A Less Common Scenario: No File Lock
+---
 
-Some simpler programs or specific OS/filesystem combinations (more common on Linux) might not place a hard lock on the file during writing. In this case:
-1.  The sorter finds the partially written file.
-2.  It classifies it and attempts the move.
-3.  The `shutil.move` command might actually succeed in moving the **incomplete file** to the destination.
+## 📄 License
 
-This is generally undesirable as you end up with a corrupt/incomplete file in your library. However, it's less likely with modern download clients that are designed to handle this.
+This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
 
-## A Potential Improvement would be a "Stale File" Check.
+---
 
-Before attempting to process a file, teh script would do this:
+<div align="center">
 
-1.  Get the file's current size and modification time.
-2.  Wait for a short period (e.g., 10-30 seconds).
-3.  Get the file's size and modification time again.
-4.  **If the size or time has changed, the file is still being written to. Skip it for this run.**
-5.  If the size and time are identical after the delay, it's "stale" (no longer being written) and safe to process.
+**Made with ❤️ for media enthusiasts**
 
-### BangBang  does NOT feature a  "stale file" logic. It relies on the operating system's file locking in order to prioritizes Maximum Throughput
+[Report Bug](https://github.com/Frederic-LM/Sort-Me-Down/issues) · [Request Feature](https://github.com/Frederic-LM/Sort-Me-Down/issues) · [Contribute](https://github.com/Frederic-LM/Sort-Me-Down/pulls)
 
-### Summary
-
-| Feature | How it's Handled | Outcome |
-| :--- | :--- | :--- |
-| **Active Download (Locked File)** | The `shutil.move` operation fails due to an OS lock. | **Safe.** An error is logged, the file is skipped, and it will be picked up on a future scan. |
-| **Active Download (Unlocked File)** | The script might move the incomplete file. | **Potentially problematic.** You could end up with a partial file in your library. This is less common. |
-| **Stale File Check** | Not implemented. | The script is simpler but relies entirely on OS locking for safety. |
-
-### For its intended purpose, the current implementation is reasonably safe. The most common scenario (a locked file) is handled gracefully by the existing error-catching logic.
-
-
-## 📜 License
-This project is licensed under the Apache License 2.0 - see the LICENSE.md file for details.
-
-
-
+</div>
