@@ -235,18 +235,15 @@ pip install pyinstaller
 
 ### Windows (.exe)
 ```bash
-pyinstaller --onefile --windowed --hidden-import="pystray._win32" \
-    --add-data "icon.ico;." --add-data "icon.png;." \
-    --icon="icon.ico" --name="Sort-Me-Down" gui.py
+pyinstaller --onefile --windowed --hidden-import="pystray._win32" --add-data "icon.ico;." --add-data "icon.png;." --icon="icon.ico" --name="Sort-Me-Down" gui.py
 ```
 
 ### macOS (.app)
 > ⚠️ **Must be compiled on macOS**
 
 ```bash
-pyinstaller --onefile --windowed --name="Sort-Me-Down" \
-    --hidden-import="pystray._win32" --icon="icon.ico" \
-    --add-data="icon.ico;." --add-data="icon.png;." gui.py
+pyinstaller --onefile --windowed --name="Sort-Me-Down" --hidden-import="pystray._win32" --icon="icon.ico" --add-data="icon.ico;." --add-data="icon.png;." gui.py
+
 ```
 
 > 🛡️ **macOS Security**: First run requires right-click → "Open" to bypass Gatekeeper
