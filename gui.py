@@ -7,6 +7,10 @@ This file contains the Graphical User Interface for the SortMeDown media sorter.
 It is built using the CustomTkinter library and provides a user-friendly way
 to interact with the sorting logic defined in `bangbang.py`.
 
+v6.0.1
+- BUG FIX: Fixed a crash in the 'Review' tab when scanning for files, caused by
+  an unsupported 'text_align' argument in the CTkButton widget.
+
 6.0
 Full rewarp of the ex Frenc Sauce
 5.9
@@ -370,9 +374,11 @@ class App(ctk.CTk):
             ctk.CTkLabel(self.mismatched_files_frame, text="No media files found.").pack()
 
         for file_path in sorted(media_files, key=lambda p: p.name):
+            # --- START: FIXED LINE ---
             btn = ctk.CTkButton(self.mismatched_files_frame, text=file_path.name,
                                 command=lambda f=file_path: self.select_mismatched_file(f),
-                                fg_color="transparent", anchor="w", text_align="left")
+                                fg_color="transparent", anchor="w")
+            # --- END: FIXED LINE ---
             btn.pack(fill="x", padx=2, pady=2)
 
     def select_mismatched_file(self, file_path: Path):
