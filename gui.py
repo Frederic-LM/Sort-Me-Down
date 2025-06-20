@@ -3,6 +3,8 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
+v6.1 Release
+ 
 v6.0.8
 - BUG FIX: Corrected a race condition when using tray menu shortcuts,
   ensuring the correct tab is always displayed instead of a blank panel.
@@ -59,6 +61,8 @@ import pystray
 import sys
 import tkinter
 import os
+import datetime
+import webbrowser
 
 import bangbang as backend
 
@@ -146,12 +150,13 @@ class App(ctk.CTk):
         self.cleanup_var = ctk.BooleanVar(value=self.config.CLEANUP_MODE_ENABLED)
         self.fallback_var = ctk.StringVar(value=self.config.FALLBACK_SHOW_DESTINATION)
         
+        # Configure the main grid layout
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=0)
-        self.grid_rowconfigure(1, weight=1)
-        self.grid_rowconfigure(2, weight=0)
+        self.grid_rowconfigure(0, weight=0)  # Row for controls (non-expanding)
+        self.grid_rowconfigure(1, weight=1)  # Row for log panel (expanding by default)
+        self.grid_rowconfigure(2, weight=0)  # Row for progress bar (non-expanding)
 
-        self.controls_frame = ctk.CTkFrame(self); self.controls_frame.grid(row=0, column=0, padx=10, pady=10, sticky="new")
+        self.controls_frame = ctk.CTkFrame(self); self.controls_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
         self.create_controls()
         
         self.log_textbox = ctk.CTkTextbox(self, state="disabled", font=("Courier New", 12))
@@ -209,16 +214,22 @@ class App(ctk.CTk):
         if tab_name == "Review":
             self.scan_mismatched_files()
         
-        # --- START: MODIFIED SECTION ---
-        # Hide log panel on "About" tab, show it on others if it's enabled
+        # Dynamically change the main grid layout based on the selected tab
         if tab_name == "About":
+            # Hide log panel
             self.log_textbox.grid_remove()
+            # Make the controls_frame (row 0) expand, and the log's row (row 1) not expand
+            self.grid_rowconfigure(0, weight=1)
+            self.grid_rowconfigure(1, weight=0)
         else:
+            # Restore default layout: controls fixed, log expands
+            self.grid_rowconfigure(0, weight=0)
+            self.grid_rowconfigure(1, weight=1)
+            # Show the log panel if it's supposed to be visible
             if self.log_is_visible:
                 self.log_textbox.grid()
             else:
                 self.log_textbox.grid_remove()
-        # --- END: MODIFIED SECTION ---
 
     def create_actions_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
@@ -392,15 +403,100 @@ class App(ctk.CTk):
 
         ctk.CTkButton(parent, text="Save Settings", command=self.save_settings).grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="e")
     
+    # --- START: MODIFIED METHOD ---
     def create_about_tab(self, parent):
-        parent.grid_rowconfigure(0, weight=1)
+        # Configure grid layout: 3 rows. ASCII (fixed), Main Info (expands), History (fixed)
+        parent.grid_rowconfigure(0, weight=0) 
+        parent.grid_rowconfigure(1, weight=1)
+        parent.grid_rowconfigure(2, weight=0)
         parent.grid_columnconfigure(0, weight=1)
+
+        def open_url(url):
+            webbrowser.open_new_tab(url)
+
+        # --- ASCII Art Banner ---
+        ascii_art = """    ██████  ▒█████   ██▀███  ▄▄▄█████▓    ███▄ ▄███▓▓█████    ▓█████▄  ▒█████   █     █░███▄    █ 
+  ▒██    ▒ ▒██▒  ██▒▓██ ▒ ██▒▓  ██▒ ▓▒   ▓██▒▀█▀ ██▒▓█   ▀    ▒██▀ ██▌▒██▒  ██▒▓█░ █ ░█░██ ▀█   █ 
+  ░ ▓██▄   ▒██░  ██▒▓██ ░▄█ ▒▒ ▓██░ ▒░   ▓██    ▓██░▒███      ░██   █▌▒██░  ██▒▒█░ █ ░█▓██  ▀█ ██▒
+    ▒   ██▒▒██   ██░▒██▀▀█▄  ░ ▓██▓ ░    ▒██    ▒██ ▒▓█  ▄    ░▓█▄   ▌▒██   ██░░█░ █ ░█▓██▒  ▐▌██▒
+  ▒██████▒▒░ ████▓▒░░██▓ ▒██▒  ▒██▒ ░    ▒██▒   ░██▒░▒████▒   ░▒████▓ ░ ████▓▒░░░██▒██▓▒██░   ▓██░
+  ▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░      ░ ▒░   ░  ░░░ ▒░ ░    ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
+  ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░       ░  ░      ░ ░ ░  ░    ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
+  ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
+        ░      ░ ░      ░                        ░      ░  ░      ░        ░ ░        ░        ░   
+                              a BangBang GUI                                                """
+
+        # --- FIX: Use a CTkLabel for the ASCII art with a monospace font ---
+        ascii_label = ctk.CTkLabel(parent, text=ascii_art, font=ctk.CTkFont(family="Courier", size=8), justify="left")
+        ascii_label.grid(row=0, column=0, padx=10, pady=(10,0), sticky="ew")
+
+        # --- Middle Box: Creator & License Info ---
+        top_textbox = ctk.CTkTextbox(parent, wrap="word", font=("Segoe UI", 14), corner_radius=6)
+        top_textbox.grid(row=1, column=0, padx=10, pady=(5, 5), sticky="nsew")
+        top_textbox.insert("end", "\n")
+
+        top_textbox.insert("end", "🗡️ Some tools aren't just built—they're forged. 🗡️\n\n")
+        top_textbox.insert("end", "Created with ❤️by: Frederic LM\n\n")
+        top_textbox.insert("end", "This little tool was crafted with love during countless late nights ☕🌙\n")
+        top_textbox.insert("end", "fueled by passion, persistence, and the dream of making our digital life smoother.\n\n")
+        top_textbox.insert("end", "If SortMeDown has sorted you out, saved you time,\n")
+        top_textbox.insert("end", "or simply made your day a bit brighter, consider spreading some joy back. \n\n")
+        top_textbox.insert("end", "Every contribution—no matter how small—keeps the fire burning\n")
+        top_textbox.insert("end", "and helps me build more tools with care and precision. 🚀\n\n")
+
+        # Single-line contribution link
+        contrib_texts = [
+            ("🍺 Buy Me a beer", "https://coff.ee/drmcwormd"),
+        ]
+
+        for i, (text, url) in enumerate(contrib_texts):
+            link_tag = f"link-{text.replace(' ', '').replace('(', '').replace(')', '').replace('!', '')}"
+            top_textbox.tag_config(link_tag, foreground="#6495ED", underline=True)
+            top_textbox.tag_bind(link_tag, "<Button-1>", lambda e, u=url: open_url(u))
+            top_textbox.tag_bind(link_tag, "<Enter>", lambda e: top_textbox.configure(cursor="hand2"))
+            top_textbox.tag_bind(link_tag, "<Leave>", lambda e: top_textbox.configure(cursor=""))
+            top_textbox.insert("end", f"{text}", link_tag)
+            if i < len(contrib_texts) - 1:
+                top_textbox.insert("end", " | ")
+
+        # Insert "Happy sorting! 📁" and clickable 🎯 icon separately
+        top_textbox.insert("end", "\n\nHappy sorting! 📁")
+
+        # Create 🎯 as an easter egg link
+        easter_egg_url = "https://youtu.be/HPCdBJMkN5A?si=UxQbUUR7x6T-EWSL"
+        easter_egg_tag = "link-easter-egg"
+        top_textbox.tag_config(easter_egg_tag, foreground="#6495ED", underline=True)
+        top_textbox.tag_bind(easter_egg_tag, "<Button-1>", lambda e: open_url(easter_egg_url))
+        top_textbox.tag_bind(easter_egg_tag, "<Enter>", lambda e: top_textbox.configure(cursor="hand2"))
+        top_textbox.tag_bind(easter_egg_tag, "<Leave>", lambda e: top_textbox.configure(cursor=""))
+        top_textbox.insert("end", "🎯", easter_egg_tag)
+        top_textbox.insert("end", "\n\n")
+
+        # License text
+        top_textbox.insert("end", f"This software is free and open-source. Apache-2.0 license, Copyright (c) {datetime.date.today().year}\n")
+
+        # Center everything
+        top_textbox.tag_config("center", justify="center")
+        top_textbox.tag_add("center", "1.0", "end")
+
+        # Make textbox read-only
+        top_textbox.configure(state="disabled")
         
-        textbox = ctk.CTkTextbox(parent, wrap="word", font=("Courier New", 12))
-        textbox.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-        
-        textbox.insert("1.0", self.version_history)
-        textbox.configure(state="disabled")
+
+        # --- Bottom Box: Version History ---
+        history_frame = ctk.CTkFrame(parent)
+        history_frame.grid(row=2, column=0, padx=10, pady=(5, 10), sticky="nsew")
+        history_frame.grid_columnconfigure(0, weight=1)
+        history_frame.grid_rowconfigure(1, weight=1)
+
+        label = ctk.CTkLabel(history_frame, text="Version History", font=ctk.CTkFont(weight="bold"))
+        label.grid(row=0, column=0, padx=10, pady=(5, 2), sticky="w")
+
+        bottom_textbox = ctk.CTkTextbox(history_frame, wrap="word", font=("Courier New", 12))
+        bottom_textbox.grid(row=1, column=0, padx=10, pady=(2, 10), sticky="nsew")
+        bottom_textbox.insert("1.0", self.version_history)
+        bottom_textbox.configure(state="disabled", height=200) # Adjusted height for better balance
+    # --- END: MODIFIED METHOD ---
 
     def _set_options_state(self, state: str):
         self.dry_run_checkbox.configure(state=state)
@@ -718,7 +814,6 @@ class App(ctk.CTk):
         self.save_settings()
         self.destroy()
 
-    # --- START: MODIFIED SECTION ---
     def _show_and_focus_tab(self, tab_name: str):
         """Brings the window to the front and focuses on a specific tab."""
         self.deiconify()
@@ -732,7 +827,6 @@ class App(ctk.CTk):
     def show_settings(self): self._show_and_focus_tab("Settings")
     def show_review(self): self._show_and_focus_tab("Review")
     def show_about(self): self._show_and_focus_tab("About")
-    # --- END: MODIFIED SECTION ---
 
     def hide_to_tray(self): self.withdraw(); self.tray_icon.notify('App is running in the background', 'SortMeDown')
     def on_minimize(self, event):
