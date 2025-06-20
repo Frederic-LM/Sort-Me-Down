@@ -7,30 +7,36 @@ This file contains the Graphical User Interface for the SortMeDown media sorter.
 It is built using the CustomTkinter library and provides a user-friendly way
 to interact with the sorting logic defined in `bangbang.py`.
 
+
+
+v6.0.5
+- ENHANCED: The autofilled name in the 'Review' tab now correctly preserves
+  the year from the filename while still removing other junk metadata. For
+  example, 'My.Movie.2024.1080p.mkv' will now suggest 'My Movie (2024)'.
+
+v6.0.4
+- BUG FIX: Fixed a crash when switching to the 'Review' tab by correcting the
+  on_tab_selected callback to properly get the current tab's name. This also
+  ensures the automatic scan-on-entry feature works correctly.
+
+v6.0.3
+- ENHANCED: Major UX improvements to the 'Review' tab:
+  - Tab now automatically scans for files upon entry.
+  - Scan button renamed to 'Rescan for Files'.
+  - File selection is now single-click and more reliable (switched to RadioButtons).
+  - Selecting a file now autofills the entry box with a cleaned title,
+    providing a much better starting point for corrections.
+
+v6.0.2
+- ENHANCED: Improved the UI in the 'Review' tab. The instruction label is
+  clearer, and selecting a file now autofills the entry box with the file's
+  name (stem) to provide a better starting point for corrections.
+
 v6.0.1
 - BUG FIX: Fixed a crash in the 'Review' tab when scanning for files, caused by
   an unsupported 'text_align' argument in the CTkButton widget.
-
-6.0
-Full rewarp of the ex Frenc Sauce
-5.9
-Exist French Sauce => Multi Lang Spliter
-5.8.3
-Minor wording change in the UI
-5.8.2
-Lock Action setings while task is run to reflect the way the backend works
-v5.8.1
-Bug fix on close
-v5.8
-New settings for API Provider
-v5.6
-New review tab
-v5.4
-Include progress bar and show/hide logs, reduce default windows side 
-
-
+...
 """
-
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import logging
@@ -127,7 +133,6 @@ class App(ctk.CTk):
         self.update_fallback_ui_state()
         
     def _set_window_icon(self):
-        """Sets the window icon after a short delay to ensure the window exists."""
         try:
             if sys.platform == "win32":
                 self.iconbitmap(str(resource_path("icon.ico")))
@@ -148,8 +153,14 @@ class App(ctk.CTk):
         self.create_actions_tab(self.tab_view.add("Actions"))
         self.create_settings_tab(self.tab_view.add("Settings"))
         self.create_mismatch_tab(self.tab_view.add("Review"))
-
+        
+        self.tab_view.configure(command=self.on_tab_selected)
         self.tab_view.set("Actions")
+
+    def on_tab_selected(self):
+        tab_name = self.tab_view.get()
+        if tab_name == "Review":
+            self.scan_mismatched_files()
 
     def create_actions_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
@@ -206,7 +217,7 @@ class App(ctk.CTk):
 
         controls_frame = ctk.CTkFrame(parent, fg_color="transparent")
         controls_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        ctk.CTkButton(controls_frame, text="Scan for Files to Review", command=self.scan_mismatched_files).pack(side="left")
+        ctk.CTkButton(controls_frame, text="Rescan for Files", command=self.scan_mismatched_files).pack(side="left")
 
         main_frame = ctk.CTkFrame(parent, fg_color="transparent")
         main_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
@@ -224,8 +235,8 @@ class App(ctk.CTk):
         self.mismatch_selected_label = ctk.CTkLabel(action_panel, text="No file selected.", wraplength=350, justify="left")
         self.mismatch_selected_label.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         
-        ctk.CTkLabel(action_panel, text="Enter Correct Name (Title and Year):").grid(row=1, column=0, sticky="w", padx=10)
-        self.mismatch_name_entry = ctk.CTkEntry(action_panel, placeholder_text="e.g., Blade Runner 2049")
+        ctk.CTkLabel(action_panel, text="Enter correct name: Title (Year)").grid(row=1, column=0, sticky="w", padx=10)
+        self.mismatch_name_entry = ctk.CTkEntry(action_panel)
         self.mismatch_name_entry.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
         
         action_button_frame = ctk.CTkFrame(action_panel, fg_color="transparent")
@@ -324,7 +335,6 @@ class App(ctk.CTk):
         ctk.CTkButton(parent, text="Save Settings", command=self.save_settings).grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="e")
     
     def _set_options_state(self, state: str):
-        """Sets the state of all runtime options widgets. 'normal' or 'disabled'."""
         self.dry_run_checkbox.configure(state=state)
         self.cleanup_checkbox.configure(state=state)
         self.watch_interval_entry.configure(state=state)
@@ -357,9 +367,13 @@ class App(ctk.CTk):
         else:
             self.mismatch_selected_label.configure(text=f"Selected: {self.selected_mismatched_file.name}")
 
+    # --- START: MODIFIED METHOD ---
     def scan_mismatched_files(self):
         for widget in self.mismatched_files_frame.winfo_children():
             widget.destroy()
+        
+        # Reset state
+        self.mismatch_buttons = {}
         self.selected_mismatched_file = None
         self._update_mismatch_panel_state()
 
@@ -372,19 +386,57 @@ class App(ctk.CTk):
         media_files = [p for ext in self.config.SUPPORTED_EXTENSIONS for p in mismatched_dir.glob(f'**/*{ext}') if p.is_file()]
         if not media_files:
             ctk.CTkLabel(self.mismatched_files_frame, text="No media files found.").pack()
+            return
 
-        for file_path in sorted(media_files, key=lambda p: p.name):
-            # --- START: FIXED LINE ---
+        sorted_media_files = sorted(media_files, key=lambda p: p.name)
+        for file_path in sorted_media_files:
             btn = ctk.CTkButton(self.mismatched_files_frame, text=file_path.name,
                                 command=lambda f=file_path: self.select_mismatched_file(f),
                                 fg_color="transparent", anchor="w")
-            # --- END: FIXED LINE ---
             btn.pack(fill="x", padx=2, pady=2)
+            # Store the button widget for later access
+            self.mismatch_buttons[file_path] = btn
+            
+        # Auto-select the first file in the list after a short delay
+        if sorted_media_files:
+            self.after(50, lambda: self.select_mismatched_file(sorted_media_files[0]))
+            
+        # Auto-select the first file in the list to provide immediate context
+        if media_files:
+            self.select_mismatched_file(media_files[0])
+    # --- END: MODIFIED METHOD ---
 
+    # --- START: MODIFIED METHOD ---
     def select_mismatched_file(self, file_path: Path):
+        """Callback for file selection. Updates state, autofills entry, and highlights button."""
         self.selected_mismatched_file = file_path
-        self._update_mismatch_panel_state()
+        
+        # --- Highlighting logic ---
+        for path, button in self.mismatch_buttons.items():
+            if path == file_path:
+                # Use the default button color for highlighting the selected item
+                button.configure(fg_color=self.default_button_color)
+            else:
+                button.configure(fg_color="transparent")
+        
+        self.update_config_from_ui()
+        
+        file_stem = self.selected_mismatched_file.stem
+        
+        clean_title = backend.TitleCleaner.clean_for_search(file_stem, self.config.CUSTOM_STRINGS_TO_REMOVE)
+        year = backend.TitleCleaner.extract_year(file_stem)
 
+        if year:
+            suggested_name = f"{clean_title} ({year})"
+        else:
+            suggested_name = clean_title
+        
+        self.mismatch_name_entry.delete(0, ctk.END)
+        self.mismatch_name_entry.insert(0, suggested_name)
+        
+        self._update_mismatch_panel_state()
+    # --- END: MODIFIED METHOD ---
+    
     def reprocess_selected_file(self):
         if not self.selected_mismatched_file: return
         new_name = self.mismatch_name_entry.get().strip()
@@ -444,7 +496,7 @@ class App(ctk.CTk):
         if not tv_enabled and self.fallback_var.get() == "tv": self.fallback_var.set("mismatched")
         if not anime_enabled and self.fallback_var.get() == "anime": self.fallback_var.set("mismatched")
         
-    def _on_french_mode_toggled(self): # Keeping method name for now, though it's repurposed
+    def _on_french_mode_toggled(self):
         self._update_mismatch_panel_state()
 
     def check_and_prompt_for_path(self, dir_key: str, bool_var: ctk.BooleanVar):
