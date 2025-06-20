@@ -3,7 +3,8 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
-v6.1 Release
+V6.1.1 Release
+v6.1.0 Release
  
 v6.0.8
 - BUG FIX: Corrected a race condition when using tray menu shortcuts,
@@ -138,7 +139,10 @@ class App(ctk.CTk):
         self.log_is_visible = True
         self.selected_mismatched_file = None
         
-        self.api_provider_var = ctk.StringVar(value=self.config.API_PROVIDER)
+        # --- START: MODIFIED BLOCK ---
+        # Set the StringVar value to match the case of the SegmentedButton values ("OMDb", "TMDB")
+        self.api_provider_var = ctk.StringVar(value="TMDB" if self.config.API_PROVIDER == "tmdb" else "OMDb")
+        # --- END: MODIFIED BLOCK ---
 
         self.enabled_vars = {
             'MOVIES_ENABLED': ctk.BooleanVar(value=self.config.MOVIES_ENABLED),
@@ -183,6 +187,24 @@ class App(ctk.CTk):
         self.setup_tray_icon()
         self.update_fallback_ui_state()
         
+        # Check for API keys on startup after a short delay to ensure the UI is ready
+        self.after(500, self.check_api_keys_on_startup)
+
+    def check_api_keys_on_startup(self):
+        """Checks for API keys and logs a warning if none are configured."""
+        has_omdb = self.config.OMDB_API_KEY and self.config.OMDB_API_KEY != "yourkey"
+        has_tmdb = self.config.TMDB_API_KEY and self.config.TMDB_API_KEY != "yourkey"
+
+        if not has_omdb and not has_tmdb:
+            logging.warning("⚠️ No API Key Found!")
+            logging.warning("----------------------------------------------------------------------")
+            logging.warning("The sorter will run in a limited, logic-only mode.")
+            logging.warning("API-based features like metadata lookup and smart renaming will not work.")
+            logging.warning("Please add at least one API key in the 'Settings' tab for full functionality.")
+            logging.warning("➡️ Get a FREE OMDb key (primary) at: https://www.omdbapi.com/apikey.aspx")
+            logging.warning("   (TMDB key is optional, but also free)")
+            logging.warning("----------------------------------------------------------------------")
+    
     def _set_window_icon(self):
         try:
             if sys.platform == "win32":
@@ -341,6 +363,7 @@ class App(ctk.CTk):
 
         self._update_mismatch_panel_state()
         
+    # --- START: MODIFIED BLOCK ---
     def create_settings_tab(self, parent):
         parent.grid_columnconfigure(1, weight=1); self.path_entries = {}
         row = 0
@@ -374,7 +397,10 @@ class App(ctk.CTk):
         row += 1
         
         ctk.CTkLabel(parent, text="Primary Provider").grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        ctk.CTkSegmentedButton(parent, values=["omdb", "tmdb"], variable=self.api_provider_var).grid(row=row, column=1, padx=5, pady=5, sticky="w")
+        provider_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        provider_frame.grid(row=row, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
+        ctk.CTkSegmentedButton(provider_frame, values=["OMDb", "TMDB"], variable=self.api_provider_var).pack(side="left")
+        ctk.CTkLabel(provider_frame, text="If both API keys are entered, the other will be used as a fallback.", text_color="gray50").pack(side="left", padx=(10,0))
         row += 1
 
         ctk.CTkLabel(parent, text="OMDb API Key").grid(row=row, column=0, padx=5, pady=5, sticky="w")
@@ -397,13 +423,12 @@ class App(ctk.CTk):
             self.tmdb_api_key_entry.insert(0, self.config.TMDB_API_KEY)
             self.tmdb_api_key_entry.configure(show="*")
         self.tmdb_api_key_entry.bind("<Key>", lambda e: self.tmdb_api_key_entry.configure(show="*"))
-        ctk.CTkLabel(tmdb_api_frame, text="(Optional, for fallback)", text_color="gray50").grid(row=0, column=1, padx=10)
-        ctk.CTkButton(tmdb_api_frame, text="Test Key", width=80, command=lambda: self.test_api_key_clicked("tmdb")).grid(row=0, column=2)
+        ctk.CTkButton(tmdb_api_frame, text="Test Key", width=80, command=lambda: self.test_api_key_clicked("tmdb")).grid(row=0, column=1, padx=(10,0))
         row += 1
 
         ctk.CTkButton(parent, text="Save Settings", command=self.save_settings).grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="e")
-    
-    # --- START: MODIFIED METHOD ---
+    # --- END: MODIFIED BLOCK ---
+
     def create_about_tab(self, parent):
         # Configure grid layout: 3 rows. ASCII (fixed), Main Info (expands), History (fixed)
         parent.grid_rowconfigure(0, weight=0) 
@@ -496,7 +521,6 @@ class App(ctk.CTk):
         bottom_textbox.grid(row=1, column=0, padx=10, pady=(2, 10), sticky="nsew")
         bottom_textbox.insert("1.0", self.version_history)
         bottom_textbox.configure(state="disabled", height=200) # Adjusted height for better balance
-    # --- END: MODIFIED METHOD ---
 
     def _set_options_state(self, state: str):
         self.dry_run_checkbox.configure(state=state)
@@ -698,11 +722,14 @@ class App(ctk.CTk):
         logging.info("✅ Settings saved to config.json")
         if self.tray_icon: self.tray_icon.update_menu()
 
+    # --- START: MODIFIED BLOCK ---
     def update_config_from_ui(self):
         for key, entry in self.path_entries.items(): setattr(self.config, key, entry.get())
         for key, var in self.enabled_vars.items(): setattr(self.config, key, var.get())
         
-        self.config.API_PROVIDER = self.api_provider_var.get()
+        # Convert display value ("OMDb", "TMDB") back to lowercase for the config
+        self.config.API_PROVIDER = self.api_provider_var.get().lower()
+
         if omdb_key := self.omdb_api_key_entry.get(): self.config.OMDB_API_KEY = omdb_key
         if tmdb_key := self.tmdb_api_key_entry.get(): self.config.TMDB_API_KEY = tmdb_key
 
@@ -713,6 +740,7 @@ class App(ctk.CTk):
         self.config.FALLBACK_SHOW_DESTINATION = self.fallback_var.get()
         try: self.config.WATCH_INTERVAL = int(self.watch_interval_entry.get()) * 60
         except (ValueError, TypeError): self.config.WATCH_INTERVAL = 15 * 60
+    # --- END: MODIFIED BLOCK ---
     
     def _update_progress(self, current_step: int, total_steps: int):
         self.after(0, self._update_progress_ui, current_step, total_steps)
@@ -729,10 +757,14 @@ class App(ctk.CTk):
     def start_task(self, task_function, is_watcher=False):
         if self.is_quitting or (self.sorter_thread and self.sorter_thread.is_alive()): return
         self.update_config_from_ui(); self.is_watching = is_watcher
-        is_valid, message = self.config.validate()
-        if not is_valid: 
-            logging.error(f"Configuration error: {message}")
+        
+        # Perform a basic GUI-side check for the most critical path.
+        # This allows the app to run without API keys, degrading gracefully.
+        if not self.config.get_path('SOURCE_DIR'):
+            logging.error("Configuration error: Source Directory is not set.")
+            messagebox.showerror("Configuration Error", "Source Directory is not set.\nPlease configure it in the 'Settings' tab before starting a task.")
             return
+
         if self.config.SPLIT_MOVIES_DIR and self.config.LANGUAGES_TO_SPLIT:
              logging.info(f"🔵⚪🔴 Language Split is ENABLED for: {self.config.LANGUAGES_TO_SPLIT}")
         if self.config.CLEANUP_MODE_ENABLED: logging.info("🧹 Clean Up Mode is ENABLED.")
