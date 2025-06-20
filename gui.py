@@ -3,8 +3,8 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
-V6.1.1 Release
-v6.1.0 Release
+v6.1.0.1
+- Release
  
 v6.0.8
 - BUG FIX: Corrected a race condition when using tray menu shortcuts,
