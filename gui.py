@@ -3,11 +3,23 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
-This file contains the Graphical User Interface for the SortMeDown media sorter.
-It is built using the CustomTkinter library and provides a user-friendly way
-to interact with the sorting logic defined in `bangbang.py`.
+v6.0.8
+- BUG FIX: Corrected a race condition when using tray menu shortcuts,
+  ensuring the correct tab is always displayed instead of a blank panel.
+- ENHANCED: The "About" tab now automatically hides the main log panel,
+  providing a cleaner, dedicated view for version information.
 
+v6.0.7
+- FEATURE: Replaced the "About" dialog with a dedicated "About" tab in the
+  main interface for easier access to version history.
+- FEATURE: Updated the system tray icon menu to include direct shortcuts
+  to the "Review" and "About" tabs.
+- ENHANCED: Cleaned up the main window's bottom bar layout.
 
+v6.0.6
+- FEATURE: Added version number to the main window title and a new status bar.
+- FEATURE: Added an "About" dialog, accessible from the status bar, which
+  displays the application's version history.
 
 v6.0.5
 - ENHANCED: The autofilled name in the 'Review' tab now correctly preserves
@@ -52,6 +64,33 @@ import bangbang as backend
 
 CONFIG_FILE = Path("config.json")
 
+def get_version_info():
+    """Parses the module's docstring to get version and history."""
+    doc = __doc__ or ""
+    lines = doc.strip().split('\n')
+    
+    version = "v?.?.?"
+    history_content = []
+    
+    # Find the latest version (first one mentioned)
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('v'):
+            version = stripped.split()[0]
+            break
+    
+    # Find the start of the changelog section
+    changelog_started = False
+    for line in lines:
+        if line.strip().startswith('v'):
+            changelog_started = True
+        if changelog_started:
+            history_content.append(line)
+            
+    history = "\n".join(history_content) if history_content else "Version history not found."
+        
+    return version, history
+
 def resource_path(relative_path):
     try: base_path = Path(sys._MEIPASS)
     except Exception: base_path = Path(__file__).parent.absolute()
@@ -83,12 +122,14 @@ class GuiLoggingHandler(logging.Handler):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("SortMeDown Media Sorter"); self.geometry("900x850"); ctk.set_appearance_mode("Dark")
+        
+        self.version, self.version_history = get_version_info()
+        self.title(f"SortMeDown Media Sorter {self.version}"); self.geometry("900x850"); ctk.set_appearance_mode("Dark")
         self.after(200, self._set_window_icon)
         
         self.config = backend.Config.load(CONFIG_FILE)
         self.sorter_thread = None; self.sorter_instance = None; self.tray_icon = None; self.tray_thread = None; self.tab_view = None
-        self.is_quitting = False; self.path_entries = {}; self.default_button_color = None; self.default_hover_color = None
+        self.is_quitting = False; self.path_entries = {}; self.mismatch_buttons = {}; self.default_button_color = None; self.default_hover_color = None
         self.is_watching = False
         self.log_is_visible = True
         self.selected_mismatched_file = None
@@ -119,11 +160,16 @@ class App(ctk.CTk):
         self.progress_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.progress_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
         self.progress_frame.grid_columnconfigure(0, weight=1)
+        
         self.progress_label = ctk.CTkLabel(self.progress_frame, text="")
         self.progress_label.grid(row=0, column=0, sticky="w", padx=5)
         self.progress_bar = ctk.CTkProgressBar(self.progress_frame)
         self.progress_bar.set(0)
         self.progress_bar.grid(row=1, column=0, sticky="ew", padx=5)
+
+        self.version_label = ctk.CTkLabel(self.progress_frame, text=self.version, text_color="gray50")
+        self.version_label.grid(row=0, column=1, rowspan=2, padx=(10, 5), sticky="e")
+        
         self.progress_frame.grid_remove()
 
         self.setup_logging()
@@ -153,6 +199,7 @@ class App(ctk.CTk):
         self.create_actions_tab(self.tab_view.add("Actions"))
         self.create_settings_tab(self.tab_view.add("Settings"))
         self.create_mismatch_tab(self.tab_view.add("Review"))
+        self.create_about_tab(self.tab_view.add("About"))
         
         self.tab_view.configure(command=self.on_tab_selected)
         self.tab_view.set("Actions")
@@ -161,6 +208,17 @@ class App(ctk.CTk):
         tab_name = self.tab_view.get()
         if tab_name == "Review":
             self.scan_mismatched_files()
+        
+        # --- START: MODIFIED SECTION ---
+        # Hide log panel on "About" tab, show it on others if it's enabled
+        if tab_name == "About":
+            self.log_textbox.grid_remove()
+        else:
+            if self.log_is_visible:
+                self.log_textbox.grid()
+            else:
+                self.log_textbox.grid_remove()
+        # --- END: MODIFIED SECTION ---
 
     def create_actions_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
@@ -334,6 +392,16 @@ class App(ctk.CTk):
 
         ctk.CTkButton(parent, text="Save Settings", command=self.save_settings).grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="e")
     
+    def create_about_tab(self, parent):
+        parent.grid_rowconfigure(0, weight=1)
+        parent.grid_columnconfigure(0, weight=1)
+        
+        textbox = ctk.CTkTextbox(parent, wrap="word", font=("Courier New", 12))
+        textbox.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        
+        textbox.insert("1.0", self.version_history)
+        textbox.configure(state="disabled")
+
     def _set_options_state(self, state: str):
         self.dry_run_checkbox.configure(state=state)
         self.cleanup_checkbox.configure(state=state)
@@ -367,12 +435,10 @@ class App(ctk.CTk):
         else:
             self.mismatch_selected_label.configure(text=f"Selected: {self.selected_mismatched_file.name}")
 
-    # --- START: MODIFIED METHOD ---
     def scan_mismatched_files(self):
         for widget in self.mismatched_files_frame.winfo_children():
             widget.destroy()
         
-        # Reset state
         self.mismatch_buttons = {}
         self.selected_mismatched_file = None
         self._update_mismatch_panel_state()
@@ -394,27 +460,17 @@ class App(ctk.CTk):
                                 command=lambda f=file_path: self.select_mismatched_file(f),
                                 fg_color="transparent", anchor="w")
             btn.pack(fill="x", padx=2, pady=2)
-            # Store the button widget for later access
             self.mismatch_buttons[file_path] = btn
             
-        # Auto-select the first file in the list after a short delay
         if sorted_media_files:
             self.after(50, lambda: self.select_mismatched_file(sorted_media_files[0]))
-            
-        # Auto-select the first file in the list to provide immediate context
-        if media_files:
-            self.select_mismatched_file(media_files[0])
-    # --- END: MODIFIED METHOD ---
 
-    # --- START: MODIFIED METHOD ---
     def select_mismatched_file(self, file_path: Path):
         """Callback for file selection. Updates state, autofills entry, and highlights button."""
         self.selected_mismatched_file = file_path
         
-        # --- Highlighting logic ---
         for path, button in self.mismatch_buttons.items():
             if path == file_path:
-                # Use the default button color for highlighting the selected item
                 button.configure(fg_color=self.default_button_color)
             else:
                 button.configure(fg_color="transparent")
@@ -435,7 +491,6 @@ class App(ctk.CTk):
         self.mismatch_name_entry.insert(0, suggested_name)
         
         self._update_mismatch_panel_state()
-    # --- END: MODIFIED METHOD ---
     
     def reprocess_selected_file(self):
         if not self.selected_mismatched_file: return
@@ -480,11 +535,11 @@ class App(ctk.CTk):
     def toggle_log_visibility(self):
         if self.log_is_visible:
             self.log_textbox.grid_remove()
-            self.grid_rowconfigure(1, weight=0)
             self.toggle_log_button.configure(text="Show Log")
         else:
-            self.log_textbox.grid()
-            self.grid_rowconfigure(1, weight=1)
+            # Only show log if not on About tab
+            if self.tab_view.get() != "About":
+                self.log_textbox.grid()
             self.toggle_log_button.configure(text="Hide Log")
         self.log_is_visible = not self.log_is_visible
 
@@ -663,8 +718,22 @@ class App(ctk.CTk):
         self.save_settings()
         self.destroy()
 
-    def show_window(self): self.deiconify(); self.lift(); self.attributes('-topmost', True); self.tab_view.set("Actions"); self.after(100, lambda: self.attributes('-topmost', False))
-    def show_settings(self): self.show_window(); self.tab_view.set("Settings")
+    # --- START: MODIFIED SECTION ---
+    def _show_and_focus_tab(self, tab_name: str):
+        """Brings the window to the front and focuses on a specific tab."""
+        self.deiconify()
+        self.lift()
+        self.attributes('-topmost', True)
+        self.tab_view.set(tab_name)
+        # on_tab_selected will be called automatically by the .set() method
+        self.after(100, lambda: self.attributes('-topmost', False))
+
+    def show_window(self): self._show_and_focus_tab("Actions")
+    def show_settings(self): self._show_and_focus_tab("Settings")
+    def show_review(self): self._show_and_focus_tab("Review")
+    def show_about(self): self._show_and_focus_tab("About")
+    # --- END: MODIFIED SECTION ---
+
     def hide_to_tray(self): self.withdraw(); self.tray_icon.notify('App is running in the background', 'SortMeDown')
     def on_minimize(self, event):
         if self.state() == 'iconic': self.hide_to_tray()
@@ -675,7 +744,11 @@ class App(ctk.CTk):
     def setup_tray_icon(self):
         image = self.create_tray_image()
         menu = (
-            pystray.MenuItem('Show', self.show_window, default=True), pystray.MenuItem('Settings', self.show_settings), pystray.Menu.SEPARATOR,
+            pystray.MenuItem('Show', self.show_window, default=True),
+            pystray.MenuItem('Settings', self.show_settings),
+            pystray.MenuItem('Review Mismatches', self.show_review),
+            pystray.MenuItem('About', self.show_about),
+            pystray.Menu.SEPARATOR,
             pystray.MenuItem('Enable Watch', self.toggle_watch_mode, checked=lambda item: self.is_watching),
             pystray.MenuItem('Set Interval', pystray.Menu(
                 pystray.MenuItem('5 minutes', lambda: self.set_interval(5), radio=True, checked=lambda i: self.config.WATCH_INTERVAL == 300),
