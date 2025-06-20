@@ -12,6 +12,12 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
+Version 6.0.4
+- ENHANCED: Made the "safe fallback mode" context-aware. If a conflict occurs
+  after a successful filename-based fallback, the system will now correctly use
+  the filename's title as the basis for the new folder, not the old, failed
+  folder name. This leads to more intuitive and accurate folder naming.
+
 Version 6.0.3
 - REFINED: Implemented a more robust two-step classification. The engine now
   first tries the folder name. If that fails (returns Unknown), it automatically
@@ -22,11 +28,6 @@ Version 6.0.2
 - FIXED: Implemented a fallback mechanism where if a folder name yields no API
   results, the engine will attempt to use the filename for classification. This
   solves the edge case where a poorly named folder contains a well-named file.
-
-Version 6.0
-- Replaced FRENCH_MODE_ENABLED with a flexible LANGUAGES_TO_SPLIT list.
-- Renamed FRENCH_MOVIES_DIR to SPLIT_MOVIES_DIR for clarity.
-- Updated sort logic to handle splitting multiple languages or all non-English.
 """
 
 
@@ -89,7 +90,7 @@ class Config:
         self.FALLBACK_SHOW_DESTINATION = "mismatched"
 
         self.LANGUAGES_TO_SPLIT = ["fr"]
-        self.SPLIT_MOVIES_DIR = "" 
+        self.SPLIT_MOVIES_DIR = ""
         
         self.MOVIES_ENABLED = True
         self.TV_SHOWS_ENABLED = True
@@ -108,7 +109,6 @@ class Config:
     @classmethod
     def from_dict(cls, data):
         config = cls()
-        # --- Compatibility for old config files ---
         if "FRENCH_MODE_ENABLED" in data:
             if data["FRENCH_MODE_ENABLED"]:
                 config.LANGUAGES_TO_SPLIT = ["fr"]
@@ -166,7 +166,7 @@ class TitleCleaner:
         return plausible_years[-1] if plausible_years else None
 
 class APIClient:
-    def __init__(self, config: Config): self.config = config; self.session = requests.Session(); self.session.headers.update({'User-Agent': 'SortMeDown/Engine/5.9'})
+    def __init__(self, config: Config): self.config = config; self.session = requests.Session(); self.session.headers.update({'User-Agent': 'SortMeDown/Engine/6.0.4'})
     
     def test_omdb_api_key(self, api_key: str) -> Tuple[bool, str]:
         if not api_key or api_key == "yourkey": return False, "API key is empty or is the default key."
@@ -411,42 +411,43 @@ class MediaSorter:
             dirs_to_check.append(self.cfg.get_path('SPLIT_MOVIES_DIR'))
         return all(self.fm.ensure_dir(d) for d in dirs_to_check if d)
         
-    def _validate_api_result(self, file_path: Path, folder_name: str, api_info: MediaInfo) -> MediaInfo:
+    # --- START: MODIFIED SECTION ---
+    def _validate_api_result(self, file_path: Path, successful_search_term: str, api_info: MediaInfo) -> MediaInfo:
         is_series_in_filename = TitleCleaner.extract_season_info(file_path.name) is not None
         is_movie_in_api = api_info.media_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]
         if is_series_in_filename and is_movie_in_api:
             logging.warning(f"CONFLICT: Filename '{file_path.name}' indicates series, but API classified '{api_info.title}' as a movie. Trusting filename.")
             new_type = MediaType.ANIME_SERIES if (api_info.language and "japanese" in api_info.language.lower()) else MediaType.TV_SERIES
             api_info.media_type = new_type
-        year_in_filename = TitleCleaner.extract_year(file_path.name) or TitleCleaner.extract_year(folder_name)
+        
+        # Note: successful_search_term might be a full filename, so check it for a year too.
+        year_in_filename = TitleCleaner.extract_year(file_path.name) or TitleCleaner.extract_year(successful_search_term)
         if year_in_filename and api_info.year and year_in_filename != api_info.year:
             logging.warning(f"CONFLICT: Filename year '{year_in_filename}' mismatches API year '{api_info.year}' for '{api_info.title}'. Reverting to safe fallback mode.")
-            clean_title = TitleCleaner.clean_for_search(folder_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+            
+            # Use the term that led to the successful (but conflicting) search as the basis for the safe title.
+            clean_title = TitleCleaner.clean_for_search(successful_search_term, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
             api_info.media_type = MediaType.UNKNOWN; api_info.title = clean_title; api_info.year = year_in_filename
         return api_info
         
     def sort_item(self, item: Path, override_name: Optional[str] = None):
         if item.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS: return
 
-        # --- START: MODIFIED SECTION ---
         initial_info: MediaInfo
-        name_for_validation: str
+        successful_search_term: str
 
         if override_name:
             logging.info(f"Re-processing '{item.name}' with manual name: '{override_name}'")
-            name_for_validation = override_name
+            successful_search_term = override_name
             initial_info = self.classifier.classify_media(override_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
         else:
             is_in_subfolder = item.parent != self.cfg.get_path('SOURCE_DIR')
             
-            # Determine the primary name to try (folder first, if it exists). This is also used for validation context.
             primary_name_to_classify = item.parent.name if is_in_subfolder else item.stem
-            name_for_validation = primary_name_to_classify
+            successful_search_term = primary_name_to_classify
 
-            # First attempt at classification using the primary name.
             initial_info = self.classifier.classify_media(primary_name_to_classify, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
             
-            # If the first attempt fails AND we have a different filename to try, fall back to it.
             if initial_info.media_type == MediaType.UNKNOWN and is_in_subfolder:
                 secondary_name_to_classify = item.stem
                 if secondary_name_to_classify.lower() != primary_name_to_classify.lower():
@@ -455,13 +456,13 @@ class MediaSorter:
                     
                     if fallback_info.media_type != MediaType.UNKNOWN:
                         logging.info("Fallback to filename was successful. Using new classification.")
-                        initial_info = fallback_info  # Adopt the successful result
+                        initial_info = fallback_info
+                        successful_search_term = secondary_name_to_classify # The filename is now the context
                     else:
                         logging.warning(f"Filename fallback for '{secondary_name_to_classify}' also failed.")
         
-        # Now, `initial_info` is our best result. Validate it against the original context.
-        info = self._validate_api_result(item, name_for_validation, initial_info)
-        # --- END: MODIFIED SECTION ---
+        info = self._validate_api_result(item, successful_search_term, initial_info)
+    # --- END: MODIFIED SECTION ---
 
         files_to_move = [item] + self.fm._find_sidecar_files(item)
         log_msg = f"Class: {info.media_type.value} | Title: '{info.get_folder_name()}'"
