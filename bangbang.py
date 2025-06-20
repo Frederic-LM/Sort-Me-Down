@@ -12,6 +12,12 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
+Version 6.0.5
+- OPTIMIZED: The AniList API is now only called if Anime Movies or Anime Series
+  sorting is enabled in the configuration. This saves an API call and a delay
+  for every file when the user is not sorting anime.
+
+
 Version 6.0.4
 - ENHANCED: Made the "safe fallback mode" context-aware. If a conflict occurs
   after a successful filename-based fallback, the system will now correctly use
@@ -245,6 +251,13 @@ class MediaClassifier:
         sleep(self.api_client.config.REQUEST_DELAY)
 
         cfg = self.api_client.config
+        # --- START: MODIFIED SECTION ---
+        anilist_data = None
+        # Only query AniList if an anime type is actually enabled for sorting.
+        if cfg.ANIME_MOVIES_ENABLED or cfg.ANIME_SERIES_ENABLED:
+            anilist_data = self.api_client.query_anilist(clean_name)
+            sleep(cfg.REQUEST_DELAY)
+        # --- END: MODIFIED SECTION ---
         primary_provider = cfg.API_PROVIDER
         secondary_provider = "tmdb" if primary_provider == "omdb" else "omdb"
         
