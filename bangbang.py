@@ -12,6 +12,12 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
+Version 6.0.3
+- REFINED: Implemented a more robust two-step classification. The engine now
+  first tries the folder name. If that fails (returns Unknown), it automatically
+  falls back and attempts a second classification using the filename before
+  resorting to the final mismatched/fallback handlers.
+
 Version 6.0.2
 - FIXED: Implemented a fallback mechanism where if a folder name yields no API
   results, the engine will attempt to use the filename for classification. This
@@ -21,32 +27,6 @@ Version 6.0
 - Replaced FRENCH_MODE_ENABLED with a flexible LANGUAGES_TO_SPLIT list.
 - Renamed FRENCH_MOVIES_DIR to SPLIT_MOVIES_DIR for clarity.
 - Updated sort logic to handle splitting multiple languages or all non-English.
-
-Version 5.8.1
--  fixing an ImportError when running cli.py.
-
-Version 5.8
-- Implemented "Conditional Fallback" for API providers. The engine now
-  automatically uses a secondary provider if it's configured and the
-  primary provider fails.
-
-Version 5.6
-- Added MediaSorter.force_move_item() to bypass API calls for manual classification.
-
-Version 5.3 Polish
-- Added a periodic log message during watch mode to show the app is still active
-  even when no new files are found.
-
-Version 5.2 BUG FIX
-- Fixed watch mode threading issue where the main task thread would exit prematurely.
-- Correctly toggles `is_processing` state during watch mode for better UI feedback.
-
-Version 5.1
-rafinement with auto creation of missmatched folder and ignore func
-
-Version 5.0
-Vastly improved inteligent sorting of missmatched item by the API
-will decide it it's a movie or a show, move to a mismatched folder or to a default dir tv or anime 
 """
 
 
@@ -108,9 +88,8 @@ class Config:
         self.WATCH_INTERVAL = 15 * 60
         self.FALLBACK_SHOW_DESTINATION = "mismatched"
 
-        # --- MODIFIED: Replaced boolean with a flexible list ---
         self.LANGUAGES_TO_SPLIT = ["fr"]
-        self.SPLIT_MOVIES_DIR = "" # Renamed from FRENCH_MOVIES_DIR
+        self.SPLIT_MOVIES_DIR = "" 
         
         self.MOVIES_ENABLED = True
         self.TV_SHOWS_ENABLED = True
@@ -448,36 +427,39 @@ class MediaSorter:
         
     def sort_item(self, item: Path, override_name: Optional[str] = None):
         if item.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS: return
-        
+
         # --- START: MODIFIED SECTION ---
-        name_to_process = ""
-        name_for_validation = ""
+        initial_info: MediaInfo
+        name_for_validation: str
 
         if override_name:
             logging.info(f"Re-processing '{item.name}' with manual name: '{override_name}'")
-            name_to_process = override_name
             name_for_validation = override_name
-            initial_info = self.classifier.classify_media(name_to_process, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+            initial_info = self.classifier.classify_media(override_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
         else:
             is_in_subfolder = item.parent != self.cfg.get_path('SOURCE_DIR')
-            primary_name = item.parent.name if is_in_subfolder else item.stem
-            secondary_name = item.stem if is_in_subfolder and item.stem != primary_name else None
             
-            name_for_validation = primary_name # Always use the container name for validation logic
-            
-            # First attempt with primary name (folder or file stem)
-            initial_info = self.classifier.classify_media(primary_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
-            
-            # If primary attempt fails and a different secondary name (file stem) exists, try it
-            if initial_info.media_type == MediaType.UNKNOWN and secondary_name:
-                logging.warning(f"Folder-based search for '{primary_name}' failed. Falling back to filename: '{secondary_name}'")
-                fallback_info = self.classifier.classify_media(secondary_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
-                if fallback_info.media_type != MediaType.UNKNOWN:
-                    logging.info("Fallback to filename was successful. Using new classification.")
-                    initial_info = fallback_info # Adopt the successful fallback info
-                else:
-                    logging.warning(f"Filename fallback for '{secondary_name}' also failed.")
+            # Determine the primary name to try (folder first, if it exists). This is also used for validation context.
+            primary_name_to_classify = item.parent.name if is_in_subfolder else item.stem
+            name_for_validation = primary_name_to_classify
 
+            # First attempt at classification using the primary name.
+            initial_info = self.classifier.classify_media(primary_name_to_classify, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+            
+            # If the first attempt fails AND we have a different filename to try, fall back to it.
+            if initial_info.media_type == MediaType.UNKNOWN and is_in_subfolder:
+                secondary_name_to_classify = item.stem
+                if secondary_name_to_classify.lower() != primary_name_to_classify.lower():
+                    logging.warning(f"Folder-based search for '{primary_name_to_classify}' failed. Falling back to filename: '{secondary_name_to_classify}'")
+                    fallback_info = self.classifier.classify_media(secondary_name_to_classify, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+                    
+                    if fallback_info.media_type != MediaType.UNKNOWN:
+                        logging.info("Fallback to filename was successful. Using new classification.")
+                        initial_info = fallback_info  # Adopt the successful result
+                    else:
+                        logging.warning(f"Filename fallback for '{secondary_name_to_classify}' also failed.")
+        
+        # Now, `initial_info` is our best result. Validate it against the original context.
         info = self._validate_api_result(item, name_for_validation, initial_info)
         # --- END: MODIFIED SECTION ---
 
@@ -523,7 +505,6 @@ class MediaSorter:
             MediaType.ANIME_SERIES: self.cfg.get_path('ANIME_SERIES_DIR')
         }.get(info.media_type)
         
-        # --- MODIFIED: This is the core logic change for the new feature ---
         if info.media_type == MediaType.MOVIE and self.cfg.get_path('SPLIT_MOVIES_DIR') and self.cfg.LANGUAGES_TO_SPLIT and not self.cfg.CLEANUP_MODE_ENABLED:
             movie_languages = {lang.strip().lower() for lang in (info.language or "").split(',')}
             split_languages = {lang.strip().lower() for lang in self.cfg.LANGUAGES_TO_SPLIT}
