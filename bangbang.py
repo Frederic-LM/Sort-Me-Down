@@ -12,6 +12,11 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
+Version 6.0.2
+- FIXED: Implemented a fallback mechanism where if a folder name yields no API
+  results, the engine will attempt to use the filename for classification. This
+  solves the edge case where a poorly named folder contains a well-named file.
+
 Version 6.0
 - Replaced FRENCH_MODE_ENABLED with a flexible LANGUAGES_TO_SPLIT list.
 - Renamed FRENCH_MOVIES_DIR to SPLIT_MOVIES_DIR for clarity.
@@ -444,14 +449,38 @@ class MediaSorter:
     def sort_item(self, item: Path, override_name: Optional[str] = None):
         if item.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS: return
         
+        # --- START: MODIFIED SECTION ---
+        name_to_process = ""
+        name_for_validation = ""
+
         if override_name:
             logging.info(f"Re-processing '{item.name}' with manual name: '{override_name}'")
-            name_to_classify = override_name
+            name_to_process = override_name
+            name_for_validation = override_name
+            initial_info = self.classifier.classify_media(name_to_process, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
         else:
-            name_to_classify = item.parent.name if item.parent != self.cfg.get_path('SOURCE_DIR') else item.stem
+            is_in_subfolder = item.parent != self.cfg.get_path('SOURCE_DIR')
+            primary_name = item.parent.name if is_in_subfolder else item.stem
+            secondary_name = item.stem if is_in_subfolder and item.stem != primary_name else None
             
-        initial_info = self.classifier.classify_media(name_to_classify, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
-        info = self._validate_api_result(item, name_to_classify, initial_info)
+            name_for_validation = primary_name # Always use the container name for validation logic
+            
+            # First attempt with primary name (folder or file stem)
+            initial_info = self.classifier.classify_media(primary_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+            
+            # If primary attempt fails and a different secondary name (file stem) exists, try it
+            if initial_info.media_type == MediaType.UNKNOWN and secondary_name:
+                logging.warning(f"Folder-based search for '{primary_name}' failed. Falling back to filename: '{secondary_name}'")
+                fallback_info = self.classifier.classify_media(secondary_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+                if fallback_info.media_type != MediaType.UNKNOWN:
+                    logging.info("Fallback to filename was successful. Using new classification.")
+                    initial_info = fallback_info # Adopt the successful fallback info
+                else:
+                    logging.warning(f"Filename fallback for '{secondary_name}' also failed.")
+
+        info = self._validate_api_result(item, name_for_validation, initial_info)
+        # --- END: MODIFIED SECTION ---
+
         files_to_move = [item] + self.fm._find_sidecar_files(item)
         log_msg = f"Class: {info.media_type.value} | Title: '{info.get_folder_name()}'"
         s = self.stats
