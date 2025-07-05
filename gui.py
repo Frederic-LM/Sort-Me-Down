@@ -2,10 +2,10 @@
 """
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
-(treat anything above 6.1.0.1 as beta.. until released)
-v6.2.5 
-- FEATURE: Redesign of the Reorganize tab
-- ENHANCED: Optimisation for large target (Reorganized folder) 
+
+v6.2.5.0
+- FEATURE: Implemented pagination in the Reorganize tab for large libraries.
+- FIXED: A bug where the about tab could cause a crash.
 
 v6.2
 - FEATURE: new Reorganize tab 
