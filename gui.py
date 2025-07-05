@@ -3,6 +3,10 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
+
+v6.2
+- FEATURE: new Reorganize tab 
+
 v6.1.0.1
 - Release
  
@@ -24,32 +28,7 @@ v6.0.6
 - FEATURE: Added an "About" dialog, accessible from the status bar, which
   displays the application's version history.
 
-v6.0.5
-- ENHANCED: The autofilled name in the 'Review' tab now correctly preserves
-  the year from the filename while still removing other junk metadata. For
-  example, 'My.Movie.2024.1080p.mkv' will now suggest 'My Movie (2024)'.
 
-v6.0.4
-- BUG FIX: Fixed a crash when switching to the 'Review' tab by correcting the
-  on_tab_selected callback to properly get the current tab's name. This also
-  ensures the automatic scan-on-entry feature works correctly.
-
-v6.0.3
-- ENHANCED: Major UX improvements to the 'Review' tab:
-  - Tab now automatically scans for files upon entry.
-  - Scan button renamed to 'Rescan for Files'.
-  - File selection is now single-click and more reliable (switched to RadioButtons).
-  - Selecting a file now autofills the entry box with a cleaned title,
-    providing a much better starting point for corrections.
-
-v6.0.2
-- ENHANCED: Improved the UI in the 'Review' tab. The instruction label is
-  clearer, and selecting a file now autofills the entry box with the file's
-  name (stem) to provide a better starting point for corrections.
-
-v6.0.1
-- BUG FIX: Fixed a crash in the 'Review' tab when scanning for files, caused by
-  an unsupported 'text_align' argument in the CTkButton widget.
 ...
 """
 import customtkinter as ctk
@@ -139,10 +118,7 @@ class App(ctk.CTk):
         self.log_is_visible = True
         self.selected_mismatched_file = None
         
-        # --- START: MODIFIED BLOCK ---
-        # Set the StringVar value to match the case of the SegmentedButton values ("OMDb", "TMDB")
         self.api_provider_var = ctk.StringVar(value="TMDB" if self.config.API_PROVIDER == "tmdb" else "OMDb")
-        # --- END: MODIFIED BLOCK ---
 
         self.enabled_vars = {
             'MOVIES_ENABLED': ctk.BooleanVar(value=self.config.MOVIES_ENABLED),
@@ -151,7 +127,7 @@ class App(ctk.CTk):
             'ANIME_SERIES_ENABLED': ctk.BooleanVar(value=self.config.ANIME_SERIES_ENABLED),
         }
         self.dry_run_var = ctk.BooleanVar(value=False)
-        self.cleanup_var = ctk.BooleanVar(value=self.config.CLEANUP_MODE_ENABLED)
+        # --- DELETED: self.cleanup_var ---
         self.fallback_var = ctk.StringVar(value=self.config.FALLBACK_SHOW_DESTINATION)
         
         # Configure the main grid layout
@@ -187,7 +163,6 @@ class App(ctk.CTk):
         self.setup_tray_icon()
         self.update_fallback_ui_state()
         
-        # Check for API keys on startup after a short delay to ensure the UI is ready
         self.after(500, self.check_api_keys_on_startup)
 
     def check_api_keys_on_startup(self):
@@ -225,6 +200,9 @@ class App(ctk.CTk):
         
         self.create_actions_tab(self.tab_view.add("Actions"))
         self.create_settings_tab(self.tab_view.add("Settings"))
+        # --- START: NEW TAB ---
+        self.create_reorganize_tab(self.tab_view.add("Reorganize"))
+        # --- END: NEW TAB ---
         self.create_mismatch_tab(self.tab_view.add("Review"))
         self.create_about_tab(self.tab_view.add("About"))
         
@@ -236,18 +214,13 @@ class App(ctk.CTk):
         if tab_name == "Review":
             self.scan_mismatched_files()
         
-        # Dynamically change the main grid layout based on the selected tab
         if tab_name == "About":
-            # Hide log panel
             self.log_textbox.grid_remove()
-            # Make the controls_frame (row 0) expand, and the log's row (row 1) not expand
             self.grid_rowconfigure(0, weight=1)
             self.grid_rowconfigure(1, weight=0)
         else:
-            # Restore default layout: controls fixed, log expands
             self.grid_rowconfigure(0, weight=0)
             self.grid_rowconfigure(1, weight=1)
-            # Show the log panel if it's supposed to be visible
             if self.log_is_visible:
                 self.log_textbox.grid()
             else:
@@ -271,16 +244,16 @@ class App(ctk.CTk):
         options_frame.grid_columnconfigure((0,1), weight=1)
         self.dry_run_checkbox = ctk.CTkCheckBox(options_frame, text="Dry Run", variable=self.dry_run_var)
         self.dry_run_checkbox.grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.cleanup_checkbox = ctk.CTkCheckBox(options_frame, text="Clean Up Source (disables Watch & Fallback)", variable=self.cleanup_var, command=self.toggle_cleanup_mode_ui)
-        self.cleanup_checkbox.grid(row=1, column=0, padx=5, pady=5, sticky="w")
         
+        # --- DELETED: cleanup_checkbox ---
+
         watch_interval_frame = ctk.CTkFrame(options_frame, fg_color="transparent"); watch_interval_frame.grid(row=0, column=1, padx=5, pady=5, sticky="e")
         ctk.CTkLabel(watch_interval_frame, text="Check every").pack(side="left", padx=(0,5))
         self.watch_interval_entry = ctk.CTkEntry(watch_interval_frame, width=40); self.watch_interval_entry.pack(side="left"); self.watch_interval_entry.insert(0, str(self.config.WATCH_INTERVAL // 60))
         ctk.CTkLabel(watch_interval_frame, text="minutes").pack(side="left", padx=(5,0))
         
         self.toggle_log_button = ctk.CTkButton(options_frame, text="Hide Log", width=100, command=self.toggle_log_visibility)
-        self.toggle_log_button.grid(row=1, column=1, sticky="e", padx=5, pady=5)
+        self.toggle_log_button.grid(row=1, column=1, sticky="e", padx=5, pady=5) # Adjusted row
         
         ctk.CTkFrame(parent, height=2, fg_color="gray25").grid(row=3, column=0, pady=(10, 5), sticky="ew") 
         self.toggles_frame = ctk.CTkFrame(parent, fg_color="transparent"); self.toggles_frame.grid(row=4, column=0, sticky="ew", pady=(0, 5)) 
@@ -300,7 +273,47 @@ class App(ctk.CTk):
         self.tv_radio = ctk.CTkRadioButton(self.fallback_frame, text="TV Shows Folder", variable=self.fallback_var, value="tv"); self.tv_radio.pack(side="left", padx=5)
         self.anime_radio = ctk.CTkRadioButton(self.fallback_frame, text="Anime Folder", variable=self.fallback_var, value="anime")
         self.anime_radio.pack(side="left", padx=5)
-        self.toggle_cleanup_mode_ui()
+        self.update_fallback_ui_state() # Call instead of toggle_cleanup_mode_ui
+
+    # --- START: NEW METHOD ---
+    def create_reorganize_tab(self, parent):
+        parent.grid_columnconfigure(0, weight=1)
+        
+        # --- Description ---
+        desc_label = ctk.CTkLabel(parent, text="Tools to organize an existing media library. These actions are performed inside the selected folder.", wraplength=700, justify="center")
+        desc_label.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        
+        # --- Target Folder Selection ---
+        path_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        path_frame.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
+        path_frame.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(path_frame, text="Target Library Folder:").grid(row=0, column=0, padx=(0, 5), sticky="w")
+        self.reorganize_path_entry = ctk.CTkEntry(path_frame, placeholder_text="Select the library folder to reorganize...")
+        self.reorganize_path_entry.grid(row=0, column=1, sticky="ew")
+        ctk.CTkButton(path_frame, text="Browse...", width=80, command=lambda: self.browse_folder(self.reorganize_path_entry)).grid(row=0, column=2, padx=(5, 0))
+
+        # --- Actions ---
+        actions_frame = ctk.CTkFrame(parent)
+        actions_frame.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        actions_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(actions_frame, text="1. Organize Folder Structure", font=ctk.CTkFont(weight="bold")).pack(pady=(10, 5), padx=10, anchor="w")
+        ctk.CTkLabel(actions_frame, text="Moves files into a clean folder structure: 'Title (Year)/Season 01/'.", wraplength=650).pack(pady=0, padx=10, anchor="w")
+        self.reorganize_folders_button = ctk.CTkButton(actions_frame, text="Reorganize Folder Structure", command=self.start_folder_reorganization)
+        self.reorganize_folders_button.pack(pady=10, padx=10, fill="x")
+
+        ctk.CTkFrame(actions_frame, height=2, fg_color="gray25").pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkLabel(actions_frame, text="2. Clean Up Filenames", font=ctk.CTkFont(weight="bold")).pack(pady=(5, 5), padx=10, anchor="w")
+        ctk.CTkLabel(actions_frame, text="Renames media files to 'Title (Year).ext' or 'Title - S01E02.ext'.", wraplength=650).pack(pady=0, padx=10, anchor="w")
+        self.rename_files_button = ctk.CTkButton(actions_frame, text="Rename Files", command=self.start_file_renaming)
+        self.rename_files_button.pack(pady=10, padx=10, fill="x")
+        
+        # --- Options for this tab ---
+        self.reorganize_dry_run_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(parent, text="Dry Run (Preview changes in the log without modifying files)", variable=self.reorganize_dry_run_var).grid(row=3, column=0, padx=10, pady=10, sticky="w")
+    # --- END: NEW METHOD ---
 
     def create_mismatch_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
@@ -363,7 +376,6 @@ class App(ctk.CTk):
 
         self._update_mismatch_panel_state()
         
-    # --- START: MODIFIED BLOCK ---
     def create_settings_tab(self, parent):
         parent.grid_columnconfigure(1, weight=1); self.path_entries = {}
         row = 0
@@ -427,19 +439,13 @@ class App(ctk.CTk):
         row += 1
 
         ctk.CTkButton(parent, text="Save Settings", command=self.save_settings).grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="e")
-    # --- END: MODIFIED BLOCK ---
 
     def create_about_tab(self, parent):
-        # Configure grid layout: 3 rows. ASCII (fixed), Main Info (expands), History (fixed)
         parent.grid_rowconfigure(0, weight=0) 
         parent.grid_rowconfigure(1, weight=1)
         parent.grid_rowconfigure(2, weight=0)
         parent.grid_columnconfigure(0, weight=1)
-
-        def open_url(url):
-            webbrowser.open_new_tab(url)
-
-        # --- ASCII Art Banner ---
+        def open_url(url): webbrowser.open_new_tab(url)
         ascii_art = """    ██████  ▒█████   ██▀███  ▄▄▄█████▓    ███▄ ▄███▓▓█████    ▓█████▄  ▒█████   █     █░███▄    █ 
   ▒██    ▒ ▒██▒  ██▒▓██ ▒ ██▒▓  ██▒ ▓▒   ▓██▒▀█▀ ██▒▓█   ▀    ▒██▀ ██▌▒██▒  ██▒▓█░ █ ░█░██ ▀█   █ 
   ░ ▓██▄   ▒██░  ██▒▓██ ░▄█ ▒▒ ▓██░ ▒░   ▓██    ▓██░▒███      ░██   █▌▒██░  ██▒▒█░ █ ░█▓██  ▀█ ██▒
@@ -450,16 +456,11 @@ class App(ctk.CTk):
   ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
         ░      ░ ░      ░                        ░      ░  ░      ░        ░ ░        ░        ░   
                               a BangBang GUI                                                """
-
-        # --- FIX: Use a CTkLabel for the ASCII art with a monospace font ---
         ascii_label = ctk.CTkLabel(parent, text=ascii_art, font=ctk.CTkFont(family="Courier", size=8), justify="left")
         ascii_label.grid(row=0, column=0, padx=10, pady=(10,0), sticky="ew")
-
-        # --- Middle Box: Creator & License Info ---
         top_textbox = ctk.CTkTextbox(parent, wrap="word", font=("Segoe UI", 14), corner_radius=6)
         top_textbox.grid(row=1, column=0, padx=10, pady=(5, 5), sticky="nsew")
         top_textbox.insert("end", "\n")
-
         top_textbox.insert("end", "🗡️ Some tools aren't just built—they're forged. 🗡️\n\n")
         top_textbox.insert("end", "Created with ❤️by: Frederic LM\n\n")
         top_textbox.insert("end", "This little tool was crafted with love during countless late nights ☕🌙\n")
@@ -468,12 +469,7 @@ class App(ctk.CTk):
         top_textbox.insert("end", "or simply made your day a bit brighter, consider spreading some joy back. \n\n")
         top_textbox.insert("end", "Every contribution—no matter how small—keeps the fire burning\n")
         top_textbox.insert("end", "and helps me build more tools with care and precision. 🚀\n\n")
-
-        # Single-line contribution link
-        contrib_texts = [
-            ("🍺 Buy Me a beer", "https://coff.ee/drmcwormd"),
-        ]
-
+        contrib_texts = [("🍺 Buy Me a beer", "https://coff.ee/drmcwormd")]
         for i, (text, url) in enumerate(contrib_texts):
             link_tag = f"link-{text.replace(' ', '').replace('(', '').replace(')', '').replace('!', '')}"
             top_textbox.tag_config(link_tag, foreground="#6495ED", underline=True)
@@ -481,13 +477,8 @@ class App(ctk.CTk):
             top_textbox.tag_bind(link_tag, "<Enter>", lambda e: top_textbox.configure(cursor="hand2"))
             top_textbox.tag_bind(link_tag, "<Leave>", lambda e: top_textbox.configure(cursor=""))
             top_textbox.insert("end", f"{text}", link_tag)
-            if i < len(contrib_texts) - 1:
-                top_textbox.insert("end", " | ")
-
-        # Insert "Happy sorting! 📁" and clickable 🎯 icon separately
+            if i < len(contrib_texts) - 1: top_textbox.insert("end", " | ")
         top_textbox.insert("end", "\n\nHappy sorting! 📁")
-
-        # Create 🎯 as an easter egg link
         easter_egg_url = "https://youtu.be/HPCdBJMkN5A?si=UxQbUUR7x6T-EWSL"
         easter_egg_tag = "link-easter-egg"
         top_textbox.tag_config(easter_egg_tag, foreground="#6495ED", underline=True)
@@ -496,35 +487,24 @@ class App(ctk.CTk):
         top_textbox.tag_bind(easter_egg_tag, "<Leave>", lambda e: top_textbox.configure(cursor=""))
         top_textbox.insert("end", "🎯", easter_egg_tag)
         top_textbox.insert("end", "\n\n")
-
-        # License text
         top_textbox.insert("end", f"This software is free and open-source. Apache-2.0 license, Copyright (c) {datetime.date.today().year}\n")
-
-        # Center everything
         top_textbox.tag_config("center", justify="center")
         top_textbox.tag_add("center", "1.0", "end")
-
-        # Make textbox read-only
         top_textbox.configure(state="disabled")
-        
-
-        # --- Bottom Box: Version History ---
         history_frame = ctk.CTkFrame(parent)
         history_frame.grid(row=2, column=0, padx=10, pady=(5, 10), sticky="nsew")
         history_frame.grid_columnconfigure(0, weight=1)
         history_frame.grid_rowconfigure(1, weight=1)
-
         label = ctk.CTkLabel(history_frame, text="Version History", font=ctk.CTkFont(weight="bold"))
         label.grid(row=0, column=0, padx=10, pady=(5, 2), sticky="w")
-
         bottom_textbox = ctk.CTkTextbox(history_frame, wrap="word", font=("Courier New", 12))
         bottom_textbox.grid(row=1, column=0, padx=10, pady=(2, 10), sticky="nsew")
         bottom_textbox.insert("1.0", self.version_history)
-        bottom_textbox.configure(state="disabled", height=200) # Adjusted height for better balance
+        bottom_textbox.configure(state="disabled", height=200)
 
     def _set_options_state(self, state: str):
+        # This function now primarily affects the Actions tab
         self.dry_run_checkbox.configure(state=state)
-        self.cleanup_checkbox.configure(state=state)
         self.watch_interval_entry.configure(state=state)
         for checkbox in self.toggles_map.values():
             checkbox.configure(state=state)
@@ -532,7 +512,6 @@ class App(ctk.CTk):
             radio_button.configure(state=state)
         if state == "normal":
             self.update_fallback_ui_state()
-            self.toggle_cleanup_mode_ui()
 
     def _update_mismatch_panel_state(self):
         is_file_selected = self.selected_mismatched_file is not None
@@ -586,7 +565,6 @@ class App(ctk.CTk):
             self.after(50, lambda: self.select_mismatched_file(sorted_media_files[0]))
 
     def select_mismatched_file(self, file_path: Path):
-        """Callback for file selection. Updates state, autofills entry, and highlights button."""
         self.selected_mismatched_file = file_path
         
         for path, button in self.mismatch_buttons.items():
@@ -657,7 +635,6 @@ class App(ctk.CTk):
             self.log_textbox.grid_remove()
             self.toggle_log_button.configure(text="Show Log")
         else:
-            # Only show log if not on About tab
             if self.tab_view.get() != "About":
                 self.log_textbox.grid()
             self.toggle_log_button.configure(text="Hide Log")
@@ -681,13 +658,9 @@ class App(ctk.CTk):
             if not self.path_entries[dir_key].get().strip(): logging.warning(f"No folder selected. Disabling feature."); bool_var.set(False)
     def stop_running_task(self):
         if self.sorter_instance: logging.warning("🛑 User initiated stop..."); self.sorter_instance.signal_stop()
-    def toggle_cleanup_mode_ui(self):
-        is_running = self.sorter_thread and self.sorter_thread.is_alive()
-        if self.cleanup_var.get():
-            self.sort_now_button.configure(text="Clean Up Source Directory", fg_color="#2E7D32", hover_color="#1B5E20"); self.watch_button.configure(state="disabled")
-        else:
-            self.sort_now_button.configure(text="Single Shot Sort", fg_color=self.default_button_color, hover_color=self.default_hover_color)
-            if not is_running: self.watch_button.configure(state="normal")
+    
+    # --- DELETED: toggle_cleanup_mode_ui method ---
+
     def _create_path_entry_row(self, parent, row, dir_key, label_text):
         ctk.CTkLabel(parent, text=label_text).grid(row=row, column=0, padx=5, pady=5, sticky="w")
         entry = ctk.CTkEntry(parent, width=400); entry.grid(row=row, column=1, padx=5, pady=5, sticky="ew")
@@ -722,12 +695,10 @@ class App(ctk.CTk):
         logging.info("✅ Settings saved to config.json")
         if self.tray_icon: self.tray_icon.update_menu()
 
-    # --- START: MODIFIED BLOCK ---
     def update_config_from_ui(self):
         for key, entry in self.path_entries.items(): setattr(self.config, key, entry.get())
         for key, var in self.enabled_vars.items(): setattr(self.config, key, var.get())
         
-        # Convert display value ("OMDb", "TMDB") back to lowercase for the config
         self.config.API_PROVIDER = self.api_provider_var.get().lower()
 
         if omdb_key := self.omdb_api_key_entry.get(): self.config.OMDB_API_KEY = omdb_key
@@ -736,11 +707,10 @@ class App(ctk.CTk):
         self.config.LANGUAGES_TO_SPLIT = [lang.strip().lower() for lang in self.split_languages_entry.get().split(',') if lang.strip()]
         self.config.SIDECAR_EXTENSIONS = {f".{ext.strip().lstrip('.')}" for ext in self.sidecar_entry.get().split(',') if ext.strip()}
         self.config.CUSTOM_STRINGS_TO_REMOVE = {s.strip().upper() for s in self.custom_strings_entry.get().split(',') if s.strip()}
-        self.config.CLEANUP_MODE_ENABLED = self.cleanup_var.get()
+        # --- DELETED: cleanup_var ---
         self.config.FALLBACK_SHOW_DESTINATION = self.fallback_var.get()
         try: self.config.WATCH_INTERVAL = int(self.watch_interval_entry.get()) * 60
         except (ValueError, TypeError): self.config.WATCH_INTERVAL = 15 * 60
-    # --- END: MODIFIED BLOCK ---
     
     def _update_progress(self, current_step: int, total_steps: int):
         self.after(0, self._update_progress_ui, current_step, total_steps)
@@ -758,8 +728,6 @@ class App(ctk.CTk):
         if self.is_quitting or (self.sorter_thread and self.sorter_thread.is_alive()): return
         self.update_config_from_ui(); self.is_watching = is_watcher
         
-        # Perform a basic GUI-side check for the most critical path.
-        # This allows the app to run without API keys, degrading gracefully.
         if not self.config.get_path('SOURCE_DIR'):
             logging.error("Configuration error: Source Directory is not set.")
             messagebox.showerror("Configuration Error", "Source Directory is not set.\nPlease configure it in the 'Settings' tab before starting a task.")
@@ -767,7 +735,6 @@ class App(ctk.CTk):
 
         if self.config.SPLIT_MOVIES_DIR and self.config.LANGUAGES_TO_SPLIT:
              logging.info(f"🔵⚪🔴 Language Split is ENABLED for: {self.config.LANGUAGES_TO_SPLIT}")
-        if self.config.CLEANUP_MODE_ENABLED: logging.info("🧹 Clean Up Mode is ENABLED.")
         if self.dry_run_var.get(): logging.info("🧪 Dry Run is ENABLED for this task.")
         
         self.progress_frame.grid()
@@ -788,6 +755,49 @@ class App(ctk.CTk):
         if self.sorter_thread and self.sorter_thread.is_alive(): self.stop_running_task()
         else: self.start_task(lambda sorter: sorter.start_watch_mode(), is_watcher=True)
         
+    # --- START: NEW HANDLER METHODS ---
+    def _start_reorganize_task(self, task_function):
+        if self.sorter_thread and self.sorter_thread.is_alive():
+            logging.warning("A task is already running.")
+            return
+
+        target_path_str = self.reorganize_path_entry.get().strip()
+        if not target_path_str:
+            messagebox.showerror("Error", "Please select a target library folder first.")
+            return
+        
+        target_path = Path(target_path_str)
+        if not target_path.exists() or not target_path.is_dir():
+            messagebox.showerror("Error", f"The selected path does not exist or is not a folder:\n{target_path}")
+            return
+
+        self.update_config_from_ui()
+        
+        self.progress_frame.grid()
+        self.progress_bar.set(0)
+        self.progress_label.configure(text="Initializing...")
+        
+        dry_run = self.reorganize_dry_run_var.get()
+        if dry_run:
+            logging.info("🧪 DRY RUN MODE ENABLED for reorganization task.")
+
+        self.sorter_instance = backend.MediaSorter(
+            self.config,
+            dry_run=dry_run,
+            progress_callback=self._update_progress
+        )
+        
+        self.sorter_thread = threading.Thread(target=task_function, args=(self.sorter_instance, target_path), daemon=True)
+        self.sorter_thread.start()
+        self.monitor_active_task()
+
+    def start_folder_reorganization(self):
+        self._start_reorganize_task(lambda sorter, path: sorter.reorganize_folder_structure(path))
+
+    def start_file_renaming(self):
+        self._start_reorganize_task(lambda sorter, path: sorter.rename_files_in_library(path))
+    # --- END: NEW HANDLER METHODS ---
+
     def monitor_active_task(self):
         if self.is_quitting: return
         is_running = self.sorter_thread and self.sorter_thread.is_alive()
@@ -795,6 +805,10 @@ class App(ctk.CTk):
         if is_running:
             self._set_options_state("disabled")
             self.sort_now_button.configure(state="disabled")
+            # --- START: MODIFICATION for Reorganize tab buttons ---
+            self.reorganize_folders_button.configure(state="disabled")
+            self.rename_files_button.configure(state="disabled")
+            # --- END: MODIFICATION ---
             self.watch_button.configure(text="Stop Watchdog" if self.is_watching else "Running...", state="normal" if self.is_watching else "disabled")
             if self.sorter_instance and self.sorter_instance.is_processing: 
                 self.stop_button.configure(state="normal", text="STOP", fg_color="#D32F2F", hover_color="#B71C1C")
@@ -805,6 +819,10 @@ class App(ctk.CTk):
             self.after(500, self.monitor_active_task)
         else:
             self._set_options_state("normal")
+            # --- START: MODIFICATION for Reorganize tab buttons ---
+            self.reorganize_folders_button.configure(state="normal")
+            self.rename_files_button.configure(state="normal")
+            # --- END: MODIFICATION ---
             if self.is_watching: logging.info("✅ Watchdog stopped.")
             else: logging.info("✅ Task finished.")
             self.sort_now_button.configure(state="normal")
@@ -813,7 +831,7 @@ class App(ctk.CTk):
             self.progress_frame.grid_remove()
             self.sorter_instance = None; self.sorter_thread = None; self.is_watching = False
             if self.tray_icon: self.tray_icon.update_menu()
-            self.toggle_cleanup_mode_ui()
+            # --- DELETED: self.toggle_cleanup_mode_ui() ---
 
     def create_tray_image(self):
         try: return Image.open(str(resource_path("icon.png")))
@@ -847,12 +865,10 @@ class App(ctk.CTk):
         self.destroy()
 
     def _show_and_focus_tab(self, tab_name: str):
-        """Brings the window to the front and focuses on a specific tab."""
         self.deiconify()
         self.lift()
         self.attributes('-topmost', True)
         self.tab_view.set(tab_name)
-        # on_tab_selected will be called automatically by the .set() method
         self.after(100, lambda: self.attributes('-topmost', False))
 
     def show_window(self): self._show_and_focus_tab("Actions")
