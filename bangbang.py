@@ -12,11 +12,8 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
-Version 6.0.5
-- OPTIMIZED: The AniList API is now only called if Anime Movies or Anime Series
-  sorting is enabled in the configuration. This saves an API call and a delay
-  for every file when the user is not sorting anime.
-
+Version 6.1
+- ENHANCED: new function to clean up and organise existing lib
 
 Version 6.0.4
 - ENHANCED: Made the "safe fallback mode" context-aware. If a conflict occurs
@@ -163,6 +160,24 @@ class TitleCleaner:
         for p in [r'[Ss](\d{1,2})[Ee]\d{1,2}', r'Season[ _-]?(\d{1,2})', r'[Ss](\d{1,2})']:
             if m:=re.search(p, filename, re.IGNORECASE): return int(m.group(1))
         return None
+
+    # --- START: NEW METHOD ---
+    @classmethod
+    def extract_episode_info(cls, filename: str) -> Optional[int]:
+        """Extracts the episode number from a filename."""
+        # Pattern for S01E02, 1x02, etc.
+        match = re.search(r'[Ss]\d{1,2}[._- ]?[Ee](\d{1,3})', filename, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+
+        # Pattern for "Episode 02"
+        match = re.search(r'Episode[._- ]?(\d{1,3})', filename, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+
+        return None
+    # --- END: NEW METHOD ---
+
     @classmethod
     def extract_year(cls, filename: str) -> Optional[str]:
         matches = re.findall(r'\b(\d{4})\b', filename)
@@ -247,17 +262,14 @@ class MediaClassifier:
             logging.warning(f"Could not extract a clean name from '{name}'. Skipping.")
             return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
 
-        anilist_data = self.api_client.query_anilist(clean_name)
-        sleep(self.api_client.config.REQUEST_DELAY)
-
-        cfg = self.api_client.config
-        # --- START: MODIFIED SECTION ---
         anilist_data = None
+        cfg = self.api_client.config
+        
         # Only query AniList if an anime type is actually enabled for sorting.
         if cfg.ANIME_MOVIES_ENABLED or cfg.ANIME_SERIES_ENABLED:
             anilist_data = self.api_client.query_anilist(clean_name)
             sleep(cfg.REQUEST_DELAY)
-        # --- END: MODIFIED SECTION ---
+        
         primary_provider = cfg.API_PROVIDER
         secondary_provider = "tmdb" if primary_provider == "omdb" else "omdb"
         
@@ -424,7 +436,6 @@ class MediaSorter:
             dirs_to_check.append(self.cfg.get_path('SPLIT_MOVIES_DIR'))
         return all(self.fm.ensure_dir(d) for d in dirs_to_check if d)
         
-    # --- START: MODIFIED SECTION ---
     def _validate_api_result(self, file_path: Path, successful_search_term: str, api_info: MediaInfo) -> MediaInfo:
         is_series_in_filename = TitleCleaner.extract_season_info(file_path.name) is not None
         is_movie_in_api = api_info.media_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]
@@ -475,7 +486,6 @@ class MediaSorter:
                         logging.warning(f"Filename fallback for '{secondary_name_to_classify}' also failed.")
         
         info = self._validate_api_result(item, successful_search_term, initial_info)
-    # --- END: MODIFIED SECTION ---
 
         files_to_move = [item] + self.fm._find_sidecar_files(item)
         log_msg = f"Class: {info.media_type.value} | Title: '{info.get_folder_name()}'"
@@ -483,29 +493,70 @@ class MediaSorter:
         if len(files_to_move) > 1: log_msg += f" | Found {len(files_to_move) - 1} sidecar file(s)."
         logging.info(log_msg)
         
+        # --- START: MODIFIED/REPLACEMENT BLOCK for UNKNOWN MEDIA TYPE ---
         if info.media_type == MediaType.UNKNOWN:
             s['unknown'] += 1
-            if self.cfg.CLEANUP_MODE_ENABLED: logging.warning("Skipping fallback move in Cleanup Mode."); return
-            if info.title and info.year:
-                is_series = TitleCleaner.extract_season_info(item.name) is not None
-                if is_series:
-                    fallback_dest = self.cfg.FALLBACK_SHOW_DESTINATION
-                    if fallback_dest == "ignore": logging.info("Fallback handler: Mismatched series set to 'ignore'. Leaving in place."); return
-                    logging.info(f"Fallback handler: Mismatched series routing to '{fallback_dest}' destination.")
-                    dest_map = {"tv": self.cfg.get_path('TV_SHOWS_DIR'), "anime": self.cfg.get_path('ANIME_SERIES_DIR'), "mismatched": self._get_mismatched_path()}
-                    base_dir = dest_map.get(fallback_dest)
-                    if not base_dir: logging.error(f"Fallback destination '{fallback_dest}' dir not set. Skipping."); s['errors'] += 1; return
-                    season = TitleCleaner.extract_season_info(item.name) or 1
-                    dest_folder = base_dir / info.get_folder_name() / f"Season {season:02d}"
-                    if self.fm.move_file_group(files_to_move, dest_folder): s['unknown'] -=1; s['tv' if fallback_dest == 'tv' else 'anime_series' if fallback_dest == 'anime' else 'unknown'] +=1
-                    else: s['errors'] += 1
-                else: 
-                    logging.info("Fallback handler: Mismatched movie routing to Mismatched folder.")
-                    base_dir = self._get_mismatched_path()
-                    if not base_dir: logging.error("Mismatched directory not set or determinable. Skipping."); s['errors'] += 1; return
-                    if self.fm.move_file_group(files_to_move, base_dir / info.get_folder_name()): s['unknown'] -=1; s['movies'] +=1
-                    else: s['errors'] += 1
+            if self.cfg.CLEANUP_MODE_ENABLED:
+                logging.warning("Skipping fallback move for UNKNOWN item in Cleanup Mode.")
+                return
+
+            mismatched_path = self._get_mismatched_path()
+            if not mismatched_path:
+                logging.error("Mismatched directory not set or determinable. Skipping UNKNOWN item.")
+                s['errors'] += 1
+                return
+
+            is_series = TitleCleaner.extract_season_info(item.name) is not None
+
+            if is_series:
+                # --- Handler for UNKNOWN TV SHOWS ---
+                # This logic respects the user's specific setting for mismatched shows.
+                fallback_dest = self.cfg.FALLBACK_SHOW_DESTINATION
+                if fallback_dest == "ignore":
+                    logging.info("Fallback handler: Mismatched series set to 'ignore'. Leaving in place.")
+                    return
+
+                logging.info(f"Fallback handler: Mismatched series routing to '{fallback_dest}' destination as per settings.")
+                dest_map = {
+                    "tv": self.cfg.get_path('TV_SHOWS_DIR'),
+                    "anime": self.cfg.get_path('ANIME_SERIES_DIR'),
+                    "mismatched": mismatched_path
+                }
+                base_dir = dest_map.get(fallback_dest)
+
+                if not base_dir:
+                    logging.error(f"Fallback destination directory for '{fallback_dest}' not set. Skipping.")
+                    s['errors'] += 1
+                    return
+                
+                season = TitleCleaner.extract_season_info(item.name) or 1
+                # Use get_folder_name() which safely handles missing titles from conflicts
+                dest_folder = base_dir / info.get_folder_name() / f"Season {season:02d}"
+                
+                if self.fm.move_file_group(files_to_move, dest_folder):
+                    s['unknown'] -=1
+                    # Update the correct stat based on where it went
+                    stat_key = 'tv' if fallback_dest == 'tv' else 'anime_series' if fallback_dest == 'anime' else 'unknown'
+                    s[stat_key] += 1
+                else:
+                    s['errors'] += 1
+            
+            else:
+                # --- Default Handler for ALL OTHER UNKNOWNS (Movies, etc.) ---
+                # This logic ALWAYS routes to the Mismatched folder, ignoring the TV show setting.
+                logging.info("Fallback handler: Unidentified item is not a series. Routing to Mismatched folder.")
+                
+                # The folder name will be "Title (Year)" if available, or just "Unknown"
+                dest_folder = mismatched_path / info.get_folder_name()
+                
+                if self.fm.move_file_group(files_to_move, dest_folder):
+                    # We can consider this a successful "movie" fallback sort for stats
+                    s['unknown'] -= 1
+                    s['movies'] += 1
+                else:
+                    s['errors'] += 1
             return
+        # --- END: MODIFIED/REPLACEMENT BLOCK ---
             
         type_enabled_map = {MediaType.MOVIE: self.cfg.MOVIES_ENABLED, MediaType.TV_SERIES: self.cfg.TV_SHOWS_ENABLED, MediaType.ANIME_MOVIE: self.cfg.ANIME_MOVIES_ENABLED, MediaType.ANIME_SERIES: self.cfg.ANIME_SERIES_ENABLED}
         if not type_enabled_map.get(info.media_type, True):
@@ -543,14 +594,148 @@ class MediaSorter:
             key = 'anime_movies' if info.media_type == MediaType.ANIME_MOVIE else 'movies'
             if base_dir == self.cfg.get_path('SPLIT_MOVIES_DIR'): key = 'split_lang_movies'
             
-            if self.fm.move_file_group(files_to_move, base_dir / info.get_folder_name()): s[key] = s.get(key, 0) + 1
+            dest_folder = base_dir / info.get_folder_name()
+            # --- START: Redundant Folder Fix ---
+            if self.cfg.CLEANUP_MODE_ENABLED and dest_folder.resolve() == item.parent.resolve():
+                logging.info(f"Skipping move, '{item.name}' is already in the correct folder.")
+                s[key] = s.get(key, 0) + 1
+                return
+            # --- END: Redundant Folder Fix ---
+            
+            if self.fm.move_file_group(files_to_move, dest_folder): s[key] = s.get(key, 0) + 1
             else: s['errors'] += 1
         elif info.media_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
             key = 'anime_series' if info.media_type == MediaType.ANIME_SERIES else 'tv'
             season = TitleCleaner.extract_season_info(item.name) or 1
-            if self.fm.move_file_group(files_to_move, base_dir / info.get_folder_name() / f"Season {season:02d}"): s[key] += 1
+            
+            dest_folder = base_dir / info.get_folder_name() / f"Season {season:02d}"
+            # --- START: Redundant Folder Fix ---
+            if self.cfg.CLEANUP_MODE_ENABLED and dest_folder.resolve() == item.parent.resolve():
+                logging.info(f"Skipping move, '{item.name}' is already in the correct folder.")
+                s[key] += 1
+                return
+            # --- END: Redundant Folder Fix ---
+
+            if self.fm.move_file_group(files_to_move, dest_folder): s[key] += 1
             else: s['errors'] += 1
             
+    # --- START: NEW METHODS for Reorganize Tab ---
+    def reorganize_folder_structure(self, target_path: Path):
+        """
+        Organizes files within the target_path into subfolders.
+        This is a controlled wrapper around the 'Clean Up In Place' logic.
+        """
+        self.is_processing = True
+        try:
+            logging.info(f"--- Starting Folder Reorganization for: '{target_path}' ---")
+            
+            # Temporarily override config for this specific task
+            original_source_dir = self.cfg.SOURCE_DIR
+            original_cleanup_mode = self.cfg.CLEANUP_MODE_ENABLED
+            
+            self.cfg.SOURCE_DIR = str(target_path)
+            self.cfg.CLEANUP_MODE_ENABLED = True
+            
+            # Run the main processing logic with the overridden config
+            self.process_source_directory()
+
+        except Exception as e:
+            logging.error(f"A fatal error occurred during folder reorganization: {e}", exc_info=True)
+        finally:
+            # Restore original config to not affect other operations
+            self.cfg.SOURCE_DIR = original_source_dir
+            self.cfg.CLEANUP_MODE_ENABLED = original_cleanup_mode
+            self.is_processing = False
+            logging.info("--- Folder Reorganization Finished ---")
+
+    def rename_files_in_library(self, target_path: Path):
+        """
+        Scans a library and renames media files and their sidecars to a clean format.
+        Format: 'Title (Year).ext' for movies, 'Title - S01E02.ext' for TV.
+        """
+        self.is_processing = True
+        self.stop_event.clear()
+        total_files = 0
+        processed_files = 0
+
+        try:
+            logging.info(f"--- Starting Filename Cleanup for: '{target_path}' ---")
+            media_files = [p for ext in self.cfg.SUPPORTED_EXTENSIONS for p in target_path.glob(f'**/*{ext}') if p.is_file()]
+            total_files = len(media_files)
+            
+            if self.progress_callback: self.progress_callback(0, total_files)
+            if not media_files:
+                logging.info("No media files found to rename.")
+                return
+
+            for item in media_files:
+                if self.stop_event.is_set():
+                    logging.warning("Rename run aborted by user.")
+                    break
+                
+                processed_files += 1
+                logging.info(f"Analyzing: '{item.name}'")
+                
+                info = self.classifier.classify_media(item.stem, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+                if info.media_type == MediaType.UNKNOWN:
+                    logging.warning(f"SKIPPED: Could not identify '{item.name}', cannot generate clean name.")
+                    if self.progress_callback: self.progress_callback(processed_files, total_files)
+                    continue
+
+                new_stem = ""
+                if info.media_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]:
+                    new_stem = info.get_folder_name() # "Title (Year)"
+                elif info.media_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
+                    season = TitleCleaner.extract_season_info(item.name)
+                    episode = TitleCleaner.extract_episode_info(item.name)
+                    if season and episode:
+                        new_stem = f"{info.title} - S{season:02d}E{episode:02d}"
+                    elif season: # Fallback for files with only season info
+                        new_stem = f"{info.title} - S{season:02d}"
+                    else:
+                        logging.warning(f"SKIPPED: Could not extract season/episode from '{item.name}'.")
+                        if self.progress_callback: self.progress_callback(processed_files, total_files)
+                        continue
+                
+                sanitized_stem = re.sub(r'[<>:"/\\|?*]', '', new_stem).strip()
+                if not sanitized_stem:
+                    logging.error(f"Failed to generate a valid new name for '{item.name}'.")
+                    if self.progress_callback: self.progress_callback(processed_files, total_files)
+                    continue
+                
+                file_group = [item] + self.fm._find_sidecar_files(item)
+                
+                for file_to_rename in file_group:
+                    new_name = f"{sanitized_stem}{file_to_rename.suffix}"
+                    new_target_path = file_to_rename.parent / new_name
+                    
+                    if file_to_rename.resolve() == new_target_path.resolve():
+                        logging.info(f"Already clean: '{file_to_rename.name}'")
+                        continue
+                    
+                    if new_target_path.exists():
+                        logging.warning(f"SKIPPED: A file named '{new_name}' already exists.")
+                        continue # Break inner loop to not rename part of the group
+                    
+                    log_prefix = "DRY RUN:" if self.dry_run else "Renamed"
+                    logging.info(f"{log_prefix}: '{file_to_rename.name}' -> '{new_name}'")
+                    
+                    if not self.dry_run:
+                        try:
+                            shutil.move(str(file_to_rename), str(new_target_path))
+                        except Exception as e:
+                            logging.error(f"ERROR renaming '{file_to_rename.name}': {e}")
+
+                if self.progress_callback: self.progress_callback(processed_files, total_files)
+        
+        except Exception as e:
+            logging.error(f"A fatal error occurred during file renaming: {e}", exc_info=True)
+        finally:
+            self.is_processing = False
+            logging.info("--- Filename Cleanup Finished ---")
+            if self.progress_callback: self.progress_callback(processed_files, total_files)
+    # --- END: NEW METHODS ---
+
     def process_source_directory(self):
         self.is_processing = True
         try:
