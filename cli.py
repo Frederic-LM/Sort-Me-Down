@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # cli.py
 """
+v6.2
+installer and portable suport
 
 v6.1
 Access to reorganize fucntions:
@@ -39,6 +41,34 @@ from pathlib import Path
 # Import the shared engine components
 from bangbang import Config, MediaSorter, setup_logging
 
+APP_NAME = "SortMeDown"
+
+def get_config_path() -> Path:
+    # Portable mode check: Look for config next to the executable first.
+    try:
+        if hasattr(sys, '_MEIPASS'):
+            portable_path = Path(sys.executable).parent / "config.json"
+        else:
+            portable_path = Path(__file__).parent / "config.json"
+        
+        if portable_path.exists():
+            # For CLI, we don't have logging set up yet, so print is fine.
+            print(f"INFO: Running in PORTABLE mode. Using config at: {portable_path}")
+            return portable_path
+    except Exception:
+        pass
+
+    # Standard mode: Use the OS-specific user data directory.
+    if sys.platform == "win32":
+        app_data_dir = Path(os.getenv("APPDATA")) / APP_NAME
+    elif sys.platform == "darwin": # macOS
+        app_data_dir = Path.home() / "Library" / "Application Support" / APP_NAME
+    else: # Linux and other UNIX-like
+        app_data_dir = Path.home() / ".config" / APP_NAME
+        
+    app_data_dir.mkdir(parents=True, exist_ok=True)
+    return app_data_dir / "config.json"
+
 # ASCII Art Logo
 ASCII_ART = """
 #    ██████  ▒█████   ██▀███  ▄▄▄█████▓    ███▄ ▄███▓▓█████    ▓█████▄  ▒█████   █     █░███▄    █ 
@@ -49,7 +79,7 @@ ASCII_ART = """
 #  ▒ ▒▓▒ ▒ ░░ ▒░▒░▒░ ░ ▒▓ ░▒▓░  ▒ ░░      ░ ▒░   ░  ░░░ ▒░ ░    ▒▒▓  ▒ ░ ▒░▒░▒░ ░ ▓░▒ ▒ ░ ▒░   ▒ ▒ 
 #  ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░       ░  ░      ░ ░ ░  ░    ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
 #  ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
-#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░      6.1.0 ░ 
+#        ░      ░ ░ CLI ░   Media Sorter Script  ░      ░  ░      ░        ░ ░      ░      6.2.0 ░ 
 #                                                               ░                                    
 """
 
@@ -61,8 +91,8 @@ def main():
         description="SortMeDown Media Sorter",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("--config", type=str, default=str(SCRIPT_DIR / "config.json"), help="Path to the configuration file (default: config.json).")
-    parser.add_argument("--version", action="version", version="SortMeDown CLI 6.0.0")
+    parser.add_argument("--config", type=str, default=str(get_config_path()), help="Path to the configuration file.")
+    parser.add_argument("--version", action="version", version="SortMeDown CLI 6.2.0")
 
     subparsers = parser.add_subparsers(dest='command', required=True, help="The action to perform.")
 
