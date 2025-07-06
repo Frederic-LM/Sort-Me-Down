@@ -12,24 +12,21 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
-Version 6.1
-- REFINED: more new functions to clean up and organise existing lib
+Version 6.2.6.0
+- FEATURE: Portable & Installer ready
 
-Version 6.1
-- ENHANCED: new functions to clean up and organise existing lib
+v6.2.5.1
+- FIXED: Tray menu did not feat. new tab.
 
-Version 6.0.4
-- ENHANCED: Made the "safe fallback mode" context-aware. If a conflict occurs
-  after a successful filename-based fallback, the system will now correctly use
-  the filename's title as the basis for the new folder, not the old, failed
-  folder name. This leads to more intuitive and accurate folder naming.
+v6.2.5.0
+- FEATURE: Implemented pagination in the Reorganize tab for large libraries.
+- BUG FIX: A bug where the about tab could cause a crash.
 
-Version 6.0.3
-- REFINED: Implemented a more robust two-step classification. The engine now
-  first tries the folder name. If that fails (returns Unknown), it automatically
-  falls back and attempts a second classification using the filename before
-  resorting to the final mismatched/fallback handlers.
+v6.2
+- FEATURE: new Reorganize tab 
 
+v6.1.0.1
+- Release
 """
 
 from pathlib import Path
@@ -62,67 +59,34 @@ class MediaInfo:
         return folder_title
 
 def setup_logging(log_file: Path, log_to_console: bool = False):
-    """Configures logging for the application engine."""
     handlers = [logging.FileHandler(log_file, encoding='utf-8')]
     if log_to_console: handlers.append(logging.StreamHandler(sys.stdout))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", handlers=handlers, force=True)
 
 class Config:
     def __init__(self):
-        self.SOURCE_DIR = ""
-        self.MOVIES_DIR = ""
-        self.TV_SHOWS_DIR = ""
-        self.ANIME_MOVIES_DIR = ""
-        self.ANIME_SERIES_DIR = ""
-        self.MISMATCHED_DIR = ""
+        self.SOURCE_DIR, self.MOVIES_DIR, self.TV_SHOWS_DIR, self.ANIME_MOVIES_DIR, self.ANIME_SERIES_DIR, self.MISMATCHED_DIR = "", "", "", "", "", ""
         self.SUPPORTED_EXTENSIONS = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp', '.ogv', '.ts', '.m2ts', '.mts'}
         self.SIDECAR_EXTENSIONS = {'.srt', '.sub', '.nfo', '.txt', '.jpg', '.png'}
         self.CUSTOM_STRINGS_TO_REMOVE = {'FRENCH', 'TRUEFRENCH', 'VOSTFR', 'MULTI', 'SUBFRENCH'}
-        
-        self.API_PROVIDER = "omdb"
-        self.OMDB_API_KEY = "yourkey"
-        self.TMDB_API_KEY = "yourkey"
-        
-        self.OMDB_URL = "http://www.omdbapi.com/"
-        self.TMDB_URL = "https://api.themoviedb.org/3"
-        self.ANILIST_URL = "https://graphql.anilist.co"
-        self.REQUEST_DELAY = 1.0
-        self.WATCH_INTERVAL = 15 * 60
-        self.FALLBACK_SHOW_DESTINATION = "mismatched"
-
-        self.LANGUAGES_TO_SPLIT = ["fr"]
-        self.SPLIT_MOVIES_DIR = ""
-        
-        self.MOVIES_ENABLED = True
-        self.TV_SHOWS_ENABLED = True
-        self.ANIME_MOVIES_ENABLED = True
-        self.ANIME_SERIES_ENABLED = True
-        self.CLEANUP_MODE_ENABLED = False
+        self.API_PROVIDER, self.OMDB_API_KEY, self.TMDB_API_KEY = "omdb", "yourkey", "yourkey"
+        self.OMDB_URL, self.TMDB_URL, self.ANILIST_URL = "http://www.omdbapi.com/", "https://api.themoviedb.org/3", "https://graphql.anilist.co"
+        self.REQUEST_DELAY, self.WATCH_INTERVAL, self.FALLBACK_SHOW_DESTINATION = 1.0, 900, "mismatched"
+        self.LANGUAGES_TO_SPLIT, self.SPLIT_MOVIES_DIR = ["fr"], ""
+        self.MOVIES_ENABLED, self.TV_SHOWS_ENABLED, self.ANIME_MOVIES_ENABLED, self.ANIME_SERIES_ENABLED, self.CLEANUP_MODE_ENABLED = True, True, True, True, False
 
     def get_path(self, key: str) -> Optional[Path]:
-        p = getattr(self, key)
-        return Path(p) if p else None
+        p = getattr(self, key); return Path(p) if p else None
     def to_dict(self):
-        d = {};
-        for k, v in self.__dict__.items():
-            if not k.startswith('_'): d[k] = list(v) if isinstance(v, set) else v
-        return d
+        d = {}; [d.update({k: list(v) if isinstance(v, set) else v}) for k, v in self.__dict__.items() if not k.startswith('_')]; return d
     @classmethod
     def from_dict(cls, data):
-        config = cls()
-        if "FRENCH_MODE_ENABLED" in data:
-            if data["FRENCH_MODE_ENABLED"]:
-                config.LANGUAGES_TO_SPLIT = ["fr"]
-            else:
-                config.LANGUAGES_TO_SPLIT = []
-        if "FRENCH_MOVIES_DIR" in data:
-            config.SPLIT_MOVIES_DIR = data["FRENCH_MOVIES_DIR"]
-
+        c = cls()
+        if "FRENCH_MODE_ENABLED" in data: c.LANGUAGES_TO_SPLIT = ["fr"] if data["FRENCH_MODE_ENABLED"] else []
+        if "FRENCH_MOVIES_DIR" in data: c.SPLIT_MOVIES_DIR = data["FRENCH_MOVIES_DIR"]
         for k, v in data.items():
-            if hasattr(config, k):
-                if isinstance(getattr(config, k), set): setattr(config, k, set(v))
-                else: setattr(config, k, v)
-        return config
+            if hasattr(c, k): setattr(c, k, set(v) if isinstance(getattr(c, k), set) else v)
+        return c
     def save(self, path: Path):
         try:
             with open(path, 'w') as f: json.dump(self.to_dict(), f, indent=4)
@@ -134,63 +98,60 @@ class Config:
             with open(path, 'r') as f: content = f.read()
             if not content.strip(): return cls()
             return cls.from_dict(json.loads(content))
-        except (json.JSONDecodeError, Exception) as e: logging.error(f"Error loading config from '{path}': {e}. Loading defaults."); return cls()
+        except Exception as e: logging.error(f"Error loading config from '{path}': {e}. Loading defaults."); return cls()
     def validate(self) -> (bool, str):
-        if self.API_PROVIDER == "omdb" and (not self.OMDB_API_KEY or self.OMDB_API_KEY == "yourkey"):
-            return False, "Primary provider (OMDb) API key is not configured."
-        if self.API_PROVIDER == "tmdb" and (not self.TMDB_API_KEY or self.TMDB_API_KEY == "yourkey"):
-            return False, "Primary provider (TMDB) API key is not configured."
-        source_dir = self.get_path('SOURCE_DIR')
-        if not source_dir or not source_dir.exists(): return False, f"Source directory not found or not set: {source_dir}"
+        if self.API_PROVIDER == "omdb" and (not self.OMDB_API_KEY or self.OMDB_API_KEY == "yourkey"): return False, "Primary provider (OMDb) API key is not configured."
+        if self.API_PROVIDER == "tmdb" and (not self.TMDB_API_KEY or self.TMDB_API_KEY == "yourkey"): return False, "Primary provider (TMDB) API key is not configured."
+        sd = self.get_path('SOURCE_DIR');
+        if not sd or not sd.exists(): return False, f"Source directory not found or not set: {sd}"
         return True, "Validation successful."
 
 class TitleCleaner:
     METADATA_BREAKPOINT_PATTERN = re.compile(r'('r'\s[\(\[]?\d{4}[\)\]]?\b'r'|\s[Ss]\d{1,2}[Ee]\d{1,2}\b'r'|\s[Ss]\d{1,2}\b'r'|\sSeason\s\d{1,2}\b'r'|\s\d{3,4}p\b'r'|\s(WEBRip|BluRay|BDRip|DVDRip|HDRip|WEB-DL|HDTV)\b'r'|\s(x264|x265|H\.?264|H\.?265|HEVC|AVC)\b'r')', re.IGNORECASE)
     @classmethod
-    def clean_for_search(cls, name: str, custom_strings_to_remove: Set[str]) -> str:
-        name_with_spaces = re.sub(r'[\._]', ' ', name); temp_title = name_with_spaces
-        for s in custom_strings_to_remove: temp_title = re.sub(r'\b' + re.escape(s) + r'\b', ' ', temp_title, flags=re.IGNORECASE)
-        title_part = temp_title[:match.start()] if (match := cls.METADATA_BREAKPOINT_PATTERN.search(temp_title)) else temp_title
-        cleaned_title = re.sub(r'\[[^\]]+\]', '', title_part)
-        return re.sub(r'\s+', ' ', cleaned_title).strip()
+    def clean_for_search(cls, name: str, custom_strings: Set[str]) -> str:
+        nws = re.sub(r'[\._]', ' ', name); tt = nws
+        for s in custom_strings: tt = re.sub(r'\b' + re.escape(s) + r'\b', ' ', tt, flags=re.IGNORECASE)
+        tp = tt[:match.start()] if (match := cls.METADATA_BREAKPOINT_PATTERN.search(tt)) else tt
+        ct = re.sub(r'\[[^\]]+\]', '', tp); return re.sub(r'\s+', ' ', ct).strip()
     @classmethod
     def extract_season_info(cls, filename: str) -> Optional[int]:
         for p in [r'\b[Ss](\d{1,2})[Ee]\d{1,2}\b', r'\bSeason[ _-]?(\d{1,2})\b', r'\b[Ss](\d{1,2})\b']:
             if m:=re.search(p, filename, re.IGNORECASE): return int(m.group(1))
         return None
-
     @classmethod
     def extract_episode_info(cls, filename: str) -> Optional[int]:
-        """Extracts the episode number from a filename."""
-        match = re.search(r'[Ss]\d{1,2}[._- ]?[Ee](\d{1,3})\b', filename, re.IGNORECASE)
-        if match: return int(match.group(1))
-        match = re.search(r'\bEpisode[._- ]?(\d{1,3})\b', filename, re.IGNORECASE)
-        if match: return int(match.group(1))
+        m = re.search(r'[Ss]\d{1,2}[._- ]?[Ee](\d{1,3})\b', filename, re.IGNORECASE)
+        if m: return int(m.group(1))
+        m = re.search(r'\bEpisode[._- ]?(\d{1,3})\b', filename, re.IGNORECASE)
+        if m: return int(m.group(1))
         return None
-
     @classmethod
     def extract_year(cls, filename: str) -> Optional[str]:
-        matches = re.findall(r'\b(\d{4})\b', filename)
-        if not matches: return None
-        current_year = datetime.now().year
-        plausible_years = [m for m in matches if 1900 <= int(m) <= current_year + 2]
-        return plausible_years[-1] if plausible_years else None
+        ms = re.findall(r'\b(\d{4})\b', filename)
+        if not ms: return None
+        cy = datetime.now().year; py = [m for m in ms if 1900 <= int(m) <= cy + 2]; return py[-1] if py else None
 
 class APIClient:
-    def __init__(self, config: Config): self.config = config; self.session = requests.Session(); self.session.headers.update({'User-Agent': 'SortMeDown/Engine/6.0.4'})
+    def __init__(self, config: Config):
+        self.config = config
+        self.session = requests.Session()
+        self.session.headers.update({'User-Agent': 'SortMeDown/Engine/6.0.4'})
     
     def test_omdb_api_key(self, api_key: str) -> Tuple[bool, str]:
         if not api_key or api_key == "yourkey": return False, "API key is empty or is the default key."
-        params = {"i": "tt0848228", "apikey": api_key};
+        params = {"i": "tt0848228", "apikey": api_key}
         try:
-            r = self.session.get(self.config.OMDB_URL, params=params, timeout=10); r.raise_for_status(); d = r.json()
+            r = self.session.get(self.config.OMDB_URL, params=params, timeout=10)
+            r.raise_for_status()
+            d = r.json()
             if d.get("Response") == "True": return True, "OMDb API Key is valid!"
             else: return False, f"OMDb Key is invalid: {d.get('Error', 'Unknown error')}"
         except requests.RequestException as e: return False, f"Network request failed: {e}"
 
     def test_tmdb_api_key(self, api_key: str) -> Tuple[bool, str]:
         if not api_key or api_key == "yourkey": return False, "API key is empty or is the default key."
-        params = {"api_key": api_key};
+        params = {"api_key": api_key}
         try:
             r = self.session.get(f"{self.config.TMDB_URL}/configuration", params=params, timeout=10)
             if r.status_code == 200: return True, "TMDB API Key is valid!"
@@ -201,20 +162,32 @@ class APIClient:
     def query_omdb(self, title: str) -> Optional[Dict[str, Any]]:
         try:
             for p in [{"t": title}, {"s": title}]:
-                fp = {**p, "apikey": self.config.OMDB_API_KEY}; r = self.session.get(self.config.OMDB_URL, params=fp, timeout=10); r.raise_for_status(); d = r.json()
+                fp = {**p, "apikey": self.config.OMDB_API_KEY}
+                r = self.session.get(self.config.OMDB_URL, params=fp, timeout=10)
+                r.raise_for_status()
+                d = r.json()
                 if d.get("Response") == "True":
-                    if "Search" in d: id_p = {"i": d["Search"][0]["imdbID"], "apikey": self.config.OMDB_API_KEY}; id_r = self.session.get(self.config.OMDB_URL, params=id_p, timeout=10); return id_r.json()
+                    if "Search" in d:
+                        id_p = {"i": d["Search"][0]["imdbID"], "apikey": self.config.OMDB_API_KEY}
+                        id_r = self.session.get(self.config.OMDB_URL, params=id_p, timeout=10)
+                        return id_r.json()
                     return d
         except requests.RequestException as e: logging.error(f"OMDb API request failed for '{title}': {e}")
         return None
 
     def query_tmdb(self, title: str) -> Optional[Dict[str, Any]]:
         try:
-            sp = {"api_key": self.config.TMDB_API_KEY, "query": title}; sr = self.session.get(f"{self.config.TMDB_URL}/search/multi", params=sp, timeout=10); sr.raise_for_status(); sd = sr.json()
+            sp = {"api_key": self.config.TMDB_API_KEY, "query": title}
+            sr = self.session.get(f"{self.config.TMDB_URL}/search/multi", params=sp, timeout=10)
+            sr.raise_for_status()
+            sd = sr.json()
             if not sd.get("results"): return None
-            fr = sd["results"][0]; mt, mid = fr.get("media_type"), fr.get("id")
+            fr = sd["results"][0]
+            mt, mid = fr.get("media_type"), fr.get("id")
             if mt not in ["movie", "tv"]: return None
-            dp = {"api_key": self.config.TMDB_API_KEY, "append_to_response": "credits,translations"}; dr = self.session.get(f"{self.config.TMDB_URL}/{mt}/{mid}", params=dp, timeout=10); dr.raise_for_status()
+            dp = {"api_key": self.config.TMDB_API_KEY, "append_to_response": "credits,translations"}
+            dr = self.session.get(f"{self.config.TMDB_URL}/{mt}/{mid}", params=dp, timeout=10)
+            dr.raise_for_status()
             return dr.json()
         except requests.RequestException as e: logging.error(f"TMDB API request failed for '{title}': {e}")
         return None
@@ -222,35 +195,54 @@ class APIClient:
     def query_anilist(self, title: str) -> Optional[Dict[str, Any]]:
         q = '''query ($search: String) { Media(search: $search, type: ANIME) { title { romaji english native } format, genres, season, seasonYear, episodes } }'''
         try:
-            r = self.session.post(self.config.ANILIST_URL, json={"query": q, "variables": {"search": title}}, timeout=10); r.raise_for_status(); m = r.json().get("data", {}).get("Media")
+            r = self.session.post(self.config.ANILIST_URL, json={"query": q, "variables": {"search": title}}, timeout=10)
+            r.raise_for_status()
+            m = r.json().get("data", {}).get("Media")
             if m: logging.info(f"AniList found match for: {title}"); return m
         except requests.RequestException as e: logging.error(f"AniList API request failed for '{title}': {e}")
         return None
 
 class MediaClassifier:
-    def __init__(self, api_client: APIClient): self.api_client = api_client
+    def __init__(self, api_client: APIClient):
+        self.api_client = api_client
 
     def classify_media(self, name: str, custom_strings: Set[str]) -> MediaInfo:
         clean_name = TitleCleaner.clean_for_search(name, custom_strings)
-        if not clean_name: logging.warning(f"Could not extract a clean name from '{name}'. Skipping."); return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
+        if not clean_name:
+            logging.warning(f"Could not extract a clean name from '{name}'. Skipping.")
+            return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
+        
         logging.info(f"Classifying: '{name}' -> Clean search: '{clean_name}'")
-        cfg = self.api_client.config; anilist_data = None
-        if cfg.ANIME_MOVIES_ENABLED or cfg.ANIME_SERIES_ENABLED: anilist_data = self.api_client.query_anilist(clean_name); sleep(cfg.REQUEST_DELAY)
+        cfg = self.api_client.config
+        anilist_data = None
+        if cfg.ANIME_MOVIES_ENABLED or cfg.ANIME_SERIES_ENABLED:
+            anilist_data = self.api_client.query_anilist(clean_name)
+            sleep(cfg.REQUEST_DELAY)
+
         pp, sp = cfg.API_PROVIDER, "tmdb" if cfg.API_PROVIDER == "omdb" else "omdb"
         sa = (sp == 'omdb' and cfg.OMDB_API_KEY and cfg.OMDB_API_KEY != 'yourkey') or \
              (sp == 'tmdb' and cfg.TMDB_API_KEY and cfg.TMDB_API_KEY != 'yourkey')
+        
         logging.info(f"Using '{pp.upper()}' as primary provider.")
-        qfp = getattr(self.api_client, f"query_{pp}"); mad = qfp(clean_name)
+        qfp = getattr(self.api_client, f"query_{pp}")
+        mad = qfp(clean_name)
+
         if mad is None and sa:
-            logging.warning(f"Primary provider '{pp.upper()}' failed. Trying fallback '{sp.upper()}'."); sleep(cfg.REQUEST_DELAY)
-            qfs = getattr(self.api_client, f"query_{sp}"); mad = qfs(clean_name)
+            logging.warning(f"Primary provider '{pp.upper()}' failed. Trying fallback '{sp.upper()}'.")
+            sleep(cfg.REQUEST_DELAY)
+            qfs = getattr(self.api_client, f"query_{sp}")
+            mad = qfs(clean_name)
             if mad: pp = sp
+            
         if anilist_data:
             if mad and pp == 'omdb' and "animation" not in mad.get("Genre", "").lower() and "japan" not in mad.get("Country", "").lower():
                 return self._classify_from_omdb(mad)
             return self._classify_from_anilist(anilist_data)
+        
         if mad: return self._classify_from_main_api(mad, pp)
-        logging.warning(f"No API results found for: {clean_name}"); return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
+        
+        logging.warning(f"No API results found for: {clean_name}")
+        return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
 
     def _classify_from_main_api(self, data: Dict[str, Any], p: str) -> MediaInfo:
         if p == "omdb": return self._classify_from_omdb(data)
@@ -258,25 +250,32 @@ class MediaClassifier:
         return MediaInfo(title=data.get("Title", "Unknown"), year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
 
     def _classify_from_anilist(self, d: Dict[str, Any]) -> MediaInfo:
-        ft = d.get("format", "").upper(); mt = MediaType.ANIME_MOVIE if ft == "MOVIE" else MediaType.ANIME_SERIES if ft in ["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"] else MediaType.UNKNOWN
-        t = d.get('title', {}).get('english') or d.get('title', {}).get('romaji'); return MediaInfo(title=t, year=str(d.get("seasonYear", "")), media_type=mt, language="Japanese", genre=", ".join(d.get("genres", [])))
+        ft = d.get("format", "").upper()
+        mt = MediaType.ANIME_MOVIE if ft == "MOVIE" else MediaType.ANIME_SERIES if ft in ["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"] else MediaType.UNKNOWN
+        t = d.get('title', {}).get('english') or d.get('title', {}).get('romaji')
+        return MediaInfo(title=t, year=str(d.get("seasonYear", "")), media_type=mt, language="Japanese", genre=", ".join(d.get("genres", [])))
 
     def _classify_from_omdb(self, d: Dict[str, Any]) -> MediaInfo:
-        t_ = d.get("Type", "").lower(); mt = MediaType.MOVIE if t_ == "movie" else MediaType.TV_SERIES if t_ in ["series", "tv series"] else MediaType.UNKNOWN
+        t_ = d.get("Type", "").lower()
+        mt = MediaType.MOVIE if t_ == "movie" else MediaType.TV_SERIES if t_ in ["series", "tv series"] else MediaType.UNKNOWN
         return MediaInfo(title=d.get("Title"), year=(d.get("Year", "") or "").split('–')[0], media_type=mt, language=d.get("Language", ""), genre=d.get("Genre", ""))
 
     def _classify_from_tmdb(self, d: Dict[str, Any]) -> MediaInfo:
-        is_m = "title" in d; mt = MediaType.MOVIE if is_m else MediaType.TV_SERIES; t = d.get("title") if is_m else d.get("name")
-        y = (d.get("release_date") or d.get("first_air_date") or "{}").split('-')[0]; lang = ""
+        is_m = "title" in d
+        mt = MediaType.MOVIE if is_m else MediaType.TV_SERIES
+        t = d.get("title") if is_m else d.get("name")
+        y = (d.get("release_date") or d.get("first_air_date") or "{}").split('-')[0]
+        lang = ""
         if d.get("translations"):
             et = next((t for t in d["translations"]["translations"] if t["iso_639_1"] == "en"), None)
             if et: lang = et["english_name"]
-        g = ", ".join([g["name"] for g in d.get("genres", [])]); return MediaInfo(title=t, year=y, media_type=mt, language=lang, genre=g)
+        g = ", ".join([g["name"] for g in d.get("genres", [])])
+        return MediaInfo(title=t, year=y, media_type=mt, language=lang, genre=g)
 
 class FileManager:
     def __init__(self, cfg: Config, dry_run: bool): self.cfg, self.dry_run = cfg, dry_run
     def _find_sidecar_files(self, pf: Path) -> List[Path]:
-        s = []; st = pf.stem
+        s, st = [], pf.stem
         for sib in pf.parent.iterdir():
             if sib != pf and sib.stem == st and sib.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS: s.append(sib)
         return s
@@ -290,7 +289,7 @@ class FileManager:
         return True
     def move_file_group(self, fg: List[Path], dd: Path) -> bool:
         if not self.ensure_dir(dd): return False
-        pf = fg[0]; all_ok = True
+        pf, all_ok = fg[0], True
         for ftm in fg:
             t = dd / ftm.name
             if str(ftm.resolve()) == str(t.resolve()): logging.info(f"Skipping move: '{ftm.name}' is already in correct location."); continue
@@ -302,7 +301,6 @@ class FileManager:
                 try: shutil.move(str(ftm), str(t))
                 except Exception as e: logging.error(f"ERROR moving file '{ftm.name}': {e}"); all_ok = False
         return all_ok
-
     def delete_file_group(self, pf: Path):
         fg = [pf] + self._find_sidecar_files(pf)
         logging.warning(f"DELETING {len(fg)} file(s) for group '{pf.stem}'")
@@ -313,7 +311,7 @@ class FileManager:
             except Exception as e: logging.error(f"Failed to delete file '{ftd.name}': {e}")
                 
 class DirectoryWatcher:
-    def __init__(self, config: Config): self.config = config; self.last_mtime = 0; self._scan()
+    def __init__(self, config: Config): self.config, self.last_mtime = config, 0; self._scan()
     def _scan(self):
         if (sd := self.config.get_path('SOURCE_DIR')) and sd.exists(): self.last_mtime = sd.stat().st_mtime
     def check_for_changes(self) -> bool:
@@ -325,7 +323,7 @@ class DirectoryWatcher:
 class MediaSorter:
     def __init__(self, cfg: Config, dry_run: bool = False, progress_callback: Optional[Callable[[int, int], None]] = None):
         self.cfg, self.dry_run, self.progress_callback = cfg, dry_run, progress_callback
-        self.api_client, self.classifier, self.fm = APIClient(cfg), MediaClassifier(APIClient(cfg)), FileManager(cfg, dry_run)
+        self.api_client = APIClient(cfg); self.classifier = MediaClassifier(self.api_client); self.fm = FileManager(cfg, dry_run)
         self.stats, self.stop_event, self.is_processing = {}, threading.Event(), False
         
     def signal_stop(self): self.stop_event.set(); logging.info("Stop signal received. Finishing current item...")
@@ -346,6 +344,7 @@ class MediaSorter:
         if p := self.cfg.get_path('MISMATCHED_DIR'): return p
         if sp := self.cfg.get_path('SOURCE_DIR'): return sp / '_Mismatched'
         return None
+        
     def ensure_target_dirs(self) -> bool:
         if self.cfg.CLEANUP_MODE_ENABLED: return True
         dirs = [self._get_mismatched_path()]
@@ -373,7 +372,6 @@ class MediaSorter:
         if item.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS: return
         initial_info, search_term = None, None
         if override_name:
-            logging.info(f"Re-processing '{item.name}' with manual name: '{override_name}'")
             search_term, initial_info = override_name, self.classifier.classify_media(override_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
         else:
             is_sub = item.parent != self.cfg.get_path('SOURCE_DIR')
@@ -382,8 +380,7 @@ class MediaSorter:
             if initial_info.media_type == MediaType.UNKNOWN and is_sub and (s_name := item.stem).lower() != p_name.lower():
                 logging.warning(f"Folder search for '{p_name}' failed. Trying filename: '{s_name}'")
                 fb_info = self.classifier.classify_media(s_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
-                if fb_info.media_type != MediaType.UNKNOWN:
-                    logging.info("Filename fallback successful."); initial_info, search_term = fb_info, s_name
+                if fb_info.media_type != MediaType.UNKNOWN: logging.info("Filename fallback successful."); initial_info, search_term = fb_info, s_name
                 else: logging.warning(f"Filename fallback for '{s_name}' also failed.")
         
         info = self._validate_api_result(item, search_term, initial_info)
@@ -421,10 +418,10 @@ class MediaSorter:
                       MediaType.ANIME_MOVIE: self.cfg.get_path('ANIME_MOVIES_DIR'), MediaType.ANIME_SERIES: self.cfg.get_path('ANIME_SERIES_DIR')}.get(info.media_type)
         
         if info.media_type == MediaType.MOVIE and self.cfg.get_path('SPLIT_MOVIES_DIR') and self.cfg.LANGUAGES_TO_SPLIT and not self.cfg.CLEANUP_MODE_ENABLED:
-            if "all" in {l.strip().lower() for l in self.cfg.LANGUAGES_TO_SPLIT} and "english" not in {l.strip().lower() for l in (info.language or "").split(',')}:
-                logging.info(f"🔵⚪🔴 Movie language '{info.language}' matches 'all non-english' split rule."); base_dir = self.cfg.get_path('SPLIT_MOVIES_DIR')
-            elif not {l.strip().lower() for l in (info.language or "").split(',')}.isdisjoint({l.strip().lower() for l in self.cfg.LANGUAGES_TO_SPLIT}):
-                logging.info(f"🔵⚪🔴 Movie language '{info.language}' matches split rule."); base_dir = self.cfg.get_path('SPLIT_MOVIES_DIR')
+            movie_langs = {l.strip().lower() for l in (info.language or "").split(',')}
+            split_langs = {l.strip().lower() for l in self.cfg.LANGUAGES_TO_SPLIT}
+            should_split = "all" in split_langs and "english" not in movie_langs or not movie_langs.isdisjoint(split_langs)
+            if should_split: logging.info(f"🔵⚪🔴 Movie language '{info.language}' matches split rule."); base_dir = self.cfg.get_path('SPLIT_MOVIES_DIR')
                 
         if not base_dir: logging.error(f"Target dir for {info.media_type.value} not set."); s['errors'] += 1; return
             
@@ -441,8 +438,8 @@ class MediaSorter:
             if self.cfg.CLEANUP_MODE_ENABLED and dest_folder.resolve() == item.parent.resolve(): logging.info(f"Skipping move, '{item.name}' is already in correct folder."); s[key] += 1; return
             if self.fm.move_file_group(files_to_move, dest_folder): s[key] += 1
             else: s['errors'] += 1
-            
-    # --- START: REWRITTEN METHOD for Reorganize Tab ---
+
+    # --- START: CORRECTED Reorganize Methods ---
     def reorganize_folder_structure(self, target_path: Path, file_list: Optional[List[Path]] = None):
         """
         Organizes files into subfolders. This is a self-contained method and does not use
@@ -450,6 +447,8 @@ class MediaSorter:
         """
         self.is_processing = True
         self.stop_event.clear()
+        processed_files = 0
+        total_files = 0
         try:
             logging.info(f"--- Starting Folder Reorganization for: '{target_path}' ---")
 
@@ -461,10 +460,12 @@ class MediaSorter:
             total_files = len(files_to_process)
             if self.progress_callback: self.progress_callback(0, total_files)
 
-            for i, item in enumerate(files_to_process):
+            for item in files_to_process:
                 if self.stop_event.is_set(): logging.warning("Reorganization run aborted."); break
+                processed_files += 1
                 
                 try:
+                    logging.info(f"Analyzing: '{item.relative_to(target_path)}'")
                     info = self.classifier.classify_media(item.stem, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
                     if info.media_type == MediaType.UNKNOWN:
                         logging.warning(f"SKIPPED: Could not identify '{item.name}', cannot determine destination folder.")
@@ -489,11 +490,11 @@ class MediaSorter:
                 except Exception as e:
                     logging.error(f"Fatal error reorganizing '{item.name}': {e}", exc_info=True)
                 finally:
-                    if self.progress_callback: self.progress_callback(i + 1, total_files)
+                    if self.progress_callback: self.progress_callback(processed_files, total_files)
         finally:
             self.is_processing = False
             logging.info("--- Folder Reorganization Finished ---")
-    # --- END: REWRITTEN METHOD ---
+            if self.progress_callback: self.progress_callback(processed_files, total_files)
 
     def rename_files_in_library(self, target_path: Path, file_list: Optional[List[Path]] = None):
         """
@@ -502,13 +503,15 @@ class MediaSorter:
         """
         self.is_processing = True
         self.stop_event.clear()
+        processed_files, total_files = 0, 0
         try:
             logging.info(f"--- Starting Filename Cleanup for: '{target_path}' ---")
             files_to_process = file_list
             if not files_to_process:
                 logging.info("No specific files selected, scanning entire directory...")
                 files_to_process = [p for ext in self.cfg.SUPPORTED_EXTENSIONS for p in target_path.glob(f'**/*{ext}') if p.is_file()]
-            total_files = len(files_to_process); processed_files = 0
+            
+            total_files = len(files_to_process)
             if self.progress_callback: self.progress_callback(0, total_files)
             if not files_to_process: logging.info("No media files found to rename."); return
 
@@ -538,7 +541,6 @@ class MediaSorter:
                     new_target_path = file_to_rename.parent / new_name
                     if file_to_rename.resolve() == new_target_path.resolve(): logging.info(f"Already clean: '{file_to_rename.name}'"); continue
                     if new_target_path.exists(): logging.warning(f"SKIPPED: A file named '{new_name}' already exists."); continue
-                    
                     log_prefix = "DRY RUN:" if self.dry_run else "Renamed"
                     logging.info(f"{log_prefix}: '{file_to_rename.name}' -> '{new_name}'")
                     if not self.dry_run:
@@ -549,7 +551,8 @@ class MediaSorter:
         finally:
             self.is_processing = False
             logging.info("--- Filename Cleanup Finished ---")
-            if self.progress_callback: self.progress_callback(processed_files, total_files) if 'processed_files' in locals() else self.progress_callback(0,0)
+            if self.progress_callback: self.progress_callback(processed_files, total_files)
+    # --- END: CORRECTED Reorganize Methods ---
 
     def process_source_directory(self):
         self.is_processing = True
@@ -594,16 +597,23 @@ class MediaSorter:
         self.stop_event.clear()
         logging.info("Watch mode started. Performing initial sort...")
         self.process_source_directory()
-        if self.stop_event.is_set(): logging.info("Watch mode stopped during initial sort."); return
+        if self.stop_event.is_set():
+            logging.info("Watch mode stopped during initial sort."); return
         watcher = DirectoryWatcher(self.cfg)
-        logging.info(f"Initial sort complete. Now watching for changes every {self.cfg.WATCH_INTERVAL // 60} minutes.")
-        while not self.stop_event.wait(self.cfg.WATCH_INTERVAL):
+        interval = self.cfg.WATCH_INTERVAL
+        logging.info(f"Initial sort complete. Now watching for changes every {interval // 60} minutes.")
+        while not self.stop_event.is_set():
             if watcher.check_for_changes():
                 logging.info("Changes detected! Starting new sort...")
                 self.process_source_directory() 
-                if self.stop_event.is_set(): logging.warning("Watch loop interrupted."); break
+                if self.stop_event.is_set():
+                    logging.warning("Watch loop interrupted."); break
                 logging.info("Processing complete. Resuming watch.")
-            else: logging.info("No new files found. Continuing to watch.")
+            else:
+                logging.info("No new files found. Continuing to watch.")
+            for _ in range(interval):
+                if self.stop_event.is_set(): break
+                sleep(1)
         logging.info("Watch mode stopped.")
 
     def log_summary(self):
