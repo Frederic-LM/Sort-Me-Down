@@ -126,7 +126,7 @@ class App(ctk.CTk):
         super().__init__()
         
         self.version, self.version_history = get_version_info()
-        self.title(f"SortMeDown Media Sorter {self.version}"); self.geometry("900x850"); ctk.set_appearance_mode("Dark")
+        self.title(f"SortMeDown Media Sorter {self.version}"); self.geometry("900x900"); ctk.set_appearance_mode("Dark")
         self.after(200, self._set_window_icon)
         
         self.config = backend.Config.load(CONFIG_FILE)
