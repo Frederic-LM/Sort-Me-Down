@@ -231,6 +231,7 @@ python cli.py watch [OPTIONS]
 ### Prerequisites
 ```bash
 pip install pyinstaller
+pip install -r requirements.txt
 ```
 
 ### Windows (.exe)
