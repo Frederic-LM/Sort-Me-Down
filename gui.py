@@ -224,19 +224,19 @@ class App(ctk.CTk):
         self.create_about_tab(self.tab_view.add("About")); self.tab_view.configure(command=self.on_tab_selected); self.tab_view.set("Actions")
 
     def on_tab_selected(self):
-    tab_name = self.tab_view.get()
-    if tab_name == "Review": self.scan_mismatched_files()
-    
-    # This logic now correctly applies to all tabs
-    if tab_name == "About":
-        self.log_textbox.grid_remove()
-        self.grid_rowconfigure(0, weight=1); self.grid_rowconfigure(1, weight=0)
-    else:
-        self.grid_rowconfigure(0, weight=0); self.grid_rowconfigure(1, weight=1)
-        if self.log_is_visible:
-            self.log_textbox.grid()
-        else:
+        tab_name = self.tab_view.get()
+        if tab_name == "Review": self.scan_mismatched_files()
+        
+        # This logic now correctly applies to all tabs
+        if tab_name == "About":
             self.log_textbox.grid_remove()
+            self.grid_rowconfigure(0, weight=1); self.grid_rowconfigure(1, weight=0)
+        else:
+            self.grid_rowconfigure(0, weight=0); self.grid_rowconfigure(1, weight=1)
+            if self.log_is_visible:
+                self.log_textbox.grid()
+            else:
+                self.log_textbox.grid_remove()
 
     def create_actions_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
