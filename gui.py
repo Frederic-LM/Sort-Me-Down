@@ -3,9 +3,15 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
+v6.2.6.0
+- FEATURE: Portable & Installer ready
+
+v6.2.5.1
+- FIXED: Tray menu did not feat. new tab.
+
 v6.2.5.0
 - FEATURE: Implemented pagination in the Reorganize tab for large libraries.
-- FIXED: A bug where the about tab could cause a crash.
+- BUG FIX: A bug where the about tab could cause a crash.
 
 v6.2
 - FEATURE: new Reorganize tab 
@@ -76,7 +82,39 @@ import math
 
 import bangbang as backend
 
-CONFIG_FILE = Path("config.json")
+APP_NAME = "SortMeDown"
+
+def get_config_path() -> Path:
+    # Portable mode check: Look for config next to the executable first.
+    try:
+        # PyInstaller sets sys._MEIPASS to the temp folder, so we need the exe's dir
+        if hasattr(sys, '_MEIPASS'):
+            portable_path = Path(sys.executable).parent / "config.json"
+        else:
+            portable_path = Path(__file__).parent / "config.json"
+        
+        if portable_path.exists():
+            logging.info(f"Running in PORTABLE mode. Using config at: {portable_path}")
+            return portable_path
+    except Exception:
+        pass # Fallback to AppData
+
+    # Standard mode: Use the OS-specific user data directory.
+    if sys.platform == "win32":
+        app_data_dir = Path(os.getenv("APPDATA")) / APP_NAME
+    elif sys.platform == "darwin": # macOS
+        app_data_dir = Path.home() / "Library" / "Application Support" / APP_NAME
+    else: # Linux and other UNIX-like
+        app_data_dir = Path.home() / ".config" / APP_NAME
+        
+    # Create the directory if it doesn't exist
+    app_data_dir.mkdir(parents=True, exist_ok=True)
+    
+    config_path = app_data_dir / "config.json"
+    logging.info(f"Using standard config location: {config_path}")
+    return config_path
+
+CONFIG_FILE = get_config_path()
 
 def get_version_info():
     """Parses the module's docstring to get version and history."""
@@ -186,12 +224,19 @@ class App(ctk.CTk):
         self.create_about_tab(self.tab_view.add("About")); self.tab_view.configure(command=self.on_tab_selected); self.tab_view.set("Actions")
 
     def on_tab_selected(self):
-        tab_name = self.tab_view.get()
-        if tab_name == "Review": self.scan_mismatched_files()
-        if tab_name == "About": self.log_textbox.grid_remove(); self.grid_rowconfigure(0, weight=1); self.grid_rowconfigure(1, weight=0)
-        else: self.grid_rowconfigure(0, weight=0); self.grid_rowconfigure(1, weight=1);
-        if self.log_is_visible: self.log_textbox.grid()
-        else: self.log_textbox.grid_remove()
+    tab_name = self.tab_view.get()
+    if tab_name == "Review": self.scan_mismatched_files()
+    
+    # This logic now correctly applies to all tabs
+    if tab_name == "About":
+        self.log_textbox.grid_remove()
+        self.grid_rowconfigure(0, weight=1); self.grid_rowconfigure(1, weight=0)
+    else:
+        self.grid_rowconfigure(0, weight=0); self.grid_rowconfigure(1, weight=1)
+        if self.log_is_visible:
+            self.log_textbox.grid()
+        else:
+            self.log_textbox.grid_remove()
 
     def create_actions_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
@@ -544,6 +589,7 @@ class App(ctk.CTk):
     def _show_and_focus_tab(self, tab_name: str): self.deiconify(); self.lift(); self.attributes('-topmost', True); self.tab_view.set(tab_name); self.after(100, lambda: self.attributes('-topmost', False))
     def show_window(self): self._show_and_focus_tab("Actions")
     def show_settings(self): self._show_and_focus_tab("Settings")
+    def show_reorganize(self): self._show_and_focus_tab("Reorganize")
     def show_review(self): self._show_and_focus_tab("Review")
     def show_about(self): self._show_and_focus_tab("About")
     def hide_to_tray(self): self.withdraw(); self.tray_icon.notify('App is running in the background', 'SortMeDown')
@@ -553,7 +599,7 @@ class App(ctk.CTk):
         
     def setup_tray_icon(self):
         image = self.create_tray_image()
-        menu = (pystray.MenuItem('Show', self.show_window, default=True), pystray.MenuItem('Settings', self.show_settings), pystray.MenuItem('Review Mismatches', self.show_review),
+        menu = (pystray.MenuItem('Show', self.show_window, default=True), pystray.MenuItem('Settings', self.show_settings),pystray.MenuItem('Reorganize Library', self.show_reorganize), pystray.MenuItem('Review Mismatches', self.show_review),
                 pystray.MenuItem('About', self.show_about), pystray.Menu.SEPARATOR,
                 pystray.MenuItem('Enable Watch', self.toggle_watch_mode, checked=lambda item: self.is_watching),
                 pystray.MenuItem('Set Interval', pystray.Menu(pystray.MenuItem('5m', lambda: self.set_interval(5), radio=True, checked=lambda i: self.config.WATCH_INTERVAL == 300),
