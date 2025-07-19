@@ -40,7 +40,7 @@ SortMeDown automatically organizes your movies, TV shows, and anime into a clean
 - 🤖 **Automatic Detection** - Movies, TV Series, Anime Movies & Series
 - 🧠 **Intelligent Conflict Resolution** - Compares filenames to API results
 - 📂 **Configurable Fallbacks** - Handle mismatched files your way
-- 🇫🇷 **Language Support** - Route French content to dedicated directories
+- 🇫🇷 **Language Support** - Route specific language content to dedicated directories
 
 </td>
 <td width="50%">
