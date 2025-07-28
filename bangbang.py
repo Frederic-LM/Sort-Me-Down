@@ -12,8 +12,12 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
-Version 6.2.6.0
-- FEATURE: Portable & Installer ready
+
+Version 6.3.1
+- FIXED: refactor methods for cleanup file name
+
+Version 6.3.0
+- FEATURE: New Cleaing Mode for quick cleanup of media files name 
 
 v6.2.5.1
 - FIXED: Tray menu did not feat. new tab.
@@ -107,25 +111,52 @@ class Config:
         return True, "Validation successful."
 
 class TitleCleaner:
-    METADATA_BREAKPOINT_PATTERN = re.compile(r'('r'\s[\(\[]?\d{4}[\)\]]?\b'r'|\s[Ss]\d{1,2}[Ee]\d{1,2}\b'r'|\s[Ss]\d{1,2}\b'r'|\sSeason\s\d{1,2}\b'r'|\s\d{3,4}p\b'r'|\s(WEBRip|BluRay|BDRip|DVDRip|HDRip|WEB-DL|HDTV)\b'r'|\s(x264|x265|H\.?264|H\.?265|HEVC|AVC)\b'r')', re.IGNORECASE)
+    METADATA_BREAKPOINT_PATTERN = re.compile(r'('r'\s[\(\[]?\d{4}[\)\]]?\b'r'|\s[Ss]\d{1,2}[Ee]\d{1,2}\b'r'|\s[Ss]\d{1,2}\b'r'|\sSeason\s\d{1,2}\b'r'|\s\d{3,4}p\b'r'|\s(WEBRip|BluRay|BDRip|DVDRip|HDRip|WEB-DL|HDTV|CR)\b'r'|\s(x264|x265|H\.?264|H\.?265|HEVC|AVC|AAC2\.0)\b'r'|\s(Msub)\b'r')', re.IGNORECASE)
+
+    @classmethod
+    def quick_clean_stem(cls, name: str, custom_strings: Set[str]) -> str:
+        """Performs a local-only cleaning of a filename stem."""
+        cleaned_name = re.sub(r'[\._]', ' ', name)
+        
+        for s in custom_strings:
+            cleaned_name = re.sub(r'\b' + re.escape(s) + r'\b', ' ', cleaned_name, flags=re.IGNORECASE)
+
+        match = cls.METADATA_BREAKPOINT_PATTERN.search(cleaned_name)
+        if match:
+            s_e_match = re.search(r'([Ss]\d{1,2}[Ee]\d{1,2})', cleaned_name, re.IGNORECASE)
+            title_part = cleaned_name[:match.start()]
+            if s_e_match:
+                title_part = f"{title_part.strip()} - {s_e_match.group(1).upper()}"
+            cleaned_name = title_part
+
+        cleaned_name = re.sub(r'\[[^\]]+\]|\([^)]*\b(source|custom)\b[^)]*\)', '', cleaned_name, flags=re.IGNORECASE)
+        cleaned_name = re.sub(r'\s+', ' ', cleaned_name).strip()
+        
+        return cleaned_name
+
     @classmethod
     def clean_for_search(cls, name: str, custom_strings: Set[str]) -> str:
         nws = re.sub(r'[\._]', ' ', name); tt = nws
         for s in custom_strings: tt = re.sub(r'\b' + re.escape(s) + r'\b', ' ', tt, flags=re.IGNORECASE)
         tp = tt[:match.start()] if (match := cls.METADATA_BREAKPOINT_PATTERN.search(tt)) else tt
         ct = re.sub(r'\[[^\]]+\]', '', tp); return re.sub(r'\s+', ' ', ct).strip()
+
     @classmethod
     def extract_season_info(cls, filename: str) -> Optional[int]:
-        for p in [r'\b[Ss](\d{1,2})[Ee]\d{1,2}\b', r'\bSeason[ _-]?(\d{1,2})\b', r'\b[Ss](\d{1,2})\b']:
+        # --- FIXED: Escaped the hyphen to treat it as a literal character ---
+        for p in [r'\b[Ss](\d{1,2})[Ee]\d{1,2}\b', r'\bSeason[ _\-]?' + r'(\d{1,2})\b', r'\b[Ss](\d{1,2})\b']:
             if m:=re.search(p, filename, re.IGNORECASE): return int(m.group(1))
         return None
+
     @classmethod
     def extract_episode_info(cls, filename: str) -> Optional[int]:
-        m = re.search(r'[Ss]\d{1,2}[._- ]?[Ee](\d{1,3})\b', filename, re.IGNORECASE)
+        # --- FIXED: Escaped the hyphen in both patterns to treat it as a literal character ---
+        m = re.search(r'[Ss]\d{1,2}[._\- ]?[Ee](\d{1,3})\b', filename, re.IGNORECASE)
         if m: return int(m.group(1))
-        m = re.search(r'\bEpisode[._- ]?(\d{1,3})\b', filename, re.IGNORECASE)
+        m = re.search(r'\bEpisode[._\- ]?(\d{1,3})\b', filename, re.IGNORECASE)
         if m: return int(m.group(1))
         return None
+
     @classmethod
     def extract_year(cls, filename: str) -> Optional[str]:
         ms = re.findall(r'\b(\d{4})\b', filename)
@@ -439,7 +470,6 @@ class MediaSorter:
             if self.fm.move_file_group(files_to_move, dest_folder): s[key] += 1
             else: s['errors'] += 1
 
-    # --- START: CORRECTED Reorganize Methods ---
     def reorganize_folder_structure(self, target_path: Path, file_list: Optional[List[Path]] = None):
         """
         Organizes files into subfolders. This is a self-contained method and does not use
@@ -496,64 +526,121 @@ class MediaSorter:
             logging.info("--- Folder Reorganization Finished ---")
             if self.progress_callback: self.progress_callback(processed_files, total_files)
 
-    def rename_files_in_library(self, target_path: Path, file_list: Optional[List[Path]] = None):
+    def generate_rename_plan(self, target_path: Path, file_list: List[Path], quick_clean_only: bool) -> Dict[Path, Path]:
         """
-        Scans and renames media files. Processes only files in file_list if provided,
-        otherwise scans the entire target_path.
+        Analyzes files and generates a plan for renaming, without executing it.
+        Returns a dictionary mapping {old_path: new_path}.
+        This version contains the combined logic from all fixes.
         """
         self.is_processing = True
         self.stop_event.clear()
-        processed_files, total_files = 0, 0
-        try:
-            logging.info(f"--- Starting Filename Cleanup for: '{target_path}' ---")
-            files_to_process = file_list
-            if not files_to_process:
-                logging.info("No specific files selected, scanning entire directory...")
-                files_to_process = [p for ext in self.cfg.SUPPORTED_EXTENSIONS for p in target_path.glob(f'**/*{ext}') if p.is_file()]
-            
-            total_files = len(files_to_process)
-            if self.progress_callback: self.progress_callback(0, total_files)
-            if not files_to_process: logging.info("No media files found to rename."); return
+        rename_plan = {}
+        total_files = len(file_list)
+        processed_files = 0
+        log_prefix = "Quick Clean" if quick_clean_only else "API-Based Rename"
 
-            for item in files_to_process:
-                if self.stop_event.is_set(): logging.warning("Rename run aborted."); break
+        try:
+            logging.info(f"--- Generating Rename Plan ({log_prefix}) for {total_files} files ---")
+            if self.progress_callback: self.progress_callback(0, total_files)
+
+            for item in file_list:
+                if self.stop_event.is_set(): logging.warning("Rename plan generation aborted."); break
                 processed_files += 1
                 logging.info(f"Analyzing: '{item.relative_to(target_path)}'")
                 
-                info = self.classifier.classify_media(item.stem, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
-                if info.media_type == MediaType.UNKNOWN:
-                    logging.warning(f"SKIPPED: Could not identify '{item.name}', cannot generate clean name."); continue
-                
                 new_stem = ""
-                if info.media_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]: new_stem = info.get_folder_name()
-                elif info.media_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
-                    s, e = TitleCleaner.extract_season_info(item.name), TitleCleaner.extract_episode_info(item.name)
-                    if s and e: new_stem = f"{info.title} - S{s:02d}E{e:02d}"
-                    elif s: new_stem = f"{info.title} - S{s:02d}"
-                    else: logging.warning(f"SKIPPED: Could not extract season/episode from '{item.name}'."); continue
+                if quick_clean_only:
+                    new_stem = TitleCleaner.quick_clean_stem(item.stem, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+                else: 
+                    # Use the smarter classification logic: parent folder name first.
+                    is_in_subdir = item.parent.resolve() != target_path.resolve()
+                    search_term = item.parent.name if is_in_subdir else item.stem
+                    
+                    info = self.classifier.classify_media(search_term, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+
+                    # Fallback to filename if folder name search fails
+                    if info.media_type == MediaType.UNKNOWN and is_in_subdir and item.stem.lower() != search_term.lower():
+                        logging.warning(f"Folder search for '{search_term}' failed. Trying filename stem: '{item.stem}'")
+                        info = self.classifier.classify_media(item.stem, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+                        if info.media_type != MediaType.UNKNOWN:
+                            logging.info("Filename stem fallback successful.")
+                    
+                    if info.media_type == MediaType.UNKNOWN:
+                        logging.warning(f"SKIPPED: Could not identify '{item.name}' via API, cannot generate clean name."); continue
+                    
+                    if info.media_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]: new_stem = info.get_folder_name()
+                    elif info.media_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
+                        s, e = TitleCleaner.extract_season_info(item.name), TitleCleaner.extract_episode_info(item.name)
+                        if s and e: new_stem = f"{info.title} - S{s:02d}E{e:02d}"
+                        elif s: new_stem = f"{info.title} - S{s:02d}"
+                        else: logging.warning(f"SKIPPED: Could not extract season/episode from '{item.name}'."); continue
                 
                 sanitized_stem = re.sub(r'[<>:"/\\|?*]', '', new_stem).strip()
-                if not sanitized_stem: logging.error(f"Failed to generate valid name for '{item.name}'."); continue
+                if not sanitized_stem or sanitized_stem == item.stem:
+                    logging.info(f"No changes needed for '{item.name}'.")
+                    continue
                 
-                file_group = [item] + self.fm._find_sidecar_files(item)
-                for file_to_rename in file_group:
-                    new_name = f"{sanitized_stem}{file_to_rename.suffix}"
+                new_path = item.parent / f"{sanitized_stem}{item.suffix}"
+                rename_plan[item] = new_path
+                logging.info(f"Plan: '{item.name}' -> '{new_path.name}'")
+                
+                if self.progress_callback: self.progress_callback(processed_files, total_files)
+        
+        finally:
+            self.is_processing = False
+            logging.info("--- Rename Plan Generation Finished ---")
+            if self.progress_callback: self.progress_callback(processed_files, total_files)
+        
+        return rename_plan
+
+    def rename_files_in_library(self, rename_plan: Dict[Path, Path]):
+        """
+        Executes a rename plan generated by generate_rename_plan.
+        This method now ONLY performs file operations.
+        """
+        self.is_processing = True
+        self.stop_event.clear()
+        processed_files, total_files = 0, len(rename_plan)
+        try:
+            logging.info(f"--- Applying Rename for {total_files} files ---")
+            if self.progress_callback: self.progress_callback(0, total_files)
+            if not rename_plan: logging.warning("Rename plan is empty. Nothing to do."); return
+
+            for old_path, new_path in rename_plan.items():
+                if self.stop_event.is_set(): logging.warning("Rename execution aborted."); break
+                processed_files += 1
+
+                file_group_originals = [old_path] + self.fm._find_sidecar_files(old_path)
+                new_stem = new_path.stem
+
+                for file_to_rename in file_group_originals:
+                    if file_to_rename != old_path and file_to_rename in rename_plan:
+                        continue
+
+                    new_name = f"{new_stem}{file_to_rename.suffix}"
                     new_target_path = file_to_rename.parent / new_name
-                    if file_to_rename.resolve() == new_target_path.resolve(): logging.info(f"Already clean: '{file_to_rename.name}'"); continue
-                    if new_target_path.exists(): logging.warning(f"SKIPPED: A file named '{new_name}' already exists."); continue
+
+                    if file_to_rename.resolve() == new_target_path.resolve():
+                        logging.info(f"Already clean: '{file_to_rename.name}'")
+                        continue
+                    if new_target_path.exists():
+                        logging.warning(f"SKIPPED: A file named '{new_name}' already exists.")
+                        continue
+                    
                     log_prefix = "DRY RUN:" if self.dry_run else "Renamed"
                     logging.info(f"{log_prefix}: '{file_to_rename.name}' -> '{new_name}'")
                     if not self.dry_run:
-                        try: shutil.move(str(file_to_rename), str(new_target_path))
-                        except Exception as ex: logging.error(f"ERROR renaming '{file_to_rename.name}': {ex}")
+                        try:
+                            shutil.move(str(file_to_rename), str(new_target_path))
+                        except Exception as ex:
+                            logging.error(f"ERROR renaming '{file_to_rename.name}': {ex}")
 
                 if self.progress_callback: self.progress_callback(processed_files, total_files)
         finally:
             self.is_processing = False
-            logging.info("--- Filename Cleanup Finished ---")
+            logging.info("--- Filename Rename Finished ---")
             if self.progress_callback: self.progress_callback(processed_files, total_files)
-    # --- END: CORRECTED Reorganize Methods ---
-
+    
     def process_source_directory(self):
         self.is_processing = True
         try:
