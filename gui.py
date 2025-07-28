@@ -4,7 +4,7 @@ SortMeDown Media Sorter - GUI (gui.py) for bang bang
 ================================
 
 v6.2.7.0
-- FEATURE: Refactored Reorganize with 2 windows
+- ENHANCED: Refactored Reorganize with 2 windows
 - FEATURE: Quick Clean up no API
 
 v6.2.6.0
