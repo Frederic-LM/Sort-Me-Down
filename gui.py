@@ -3,6 +3,10 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
+v6.2.7.0
+- FEATURE: Refactored Reorganize with 2 windows
+- FEATURE: Quick Clean up no API
+
 v6.2.6.0
 - FEATURE: Portable & Installer ready
 
@@ -77,7 +81,7 @@ import tkinter
 import os
 import datetime
 import webbrowser
-from typing import List
+from typing import List, Dict
 import math
 
 import bangbang as backend
@@ -172,12 +176,13 @@ class App(ctk.CTk):
         self.is_quitting = False; self.path_entries = {}; self.mismatch_buttons = {}; self.default_button_color = None; self.default_hover_color = None
         self.is_watching = False; self.log_is_visible = True; self.selected_mismatched_file = None
         
-        # --- START: Variables for Reorganize Tab Pagination ---
+        # --- START: Variables for Reorganize Tab ---
         self.reorganize_all_files = []
         self.reorganize_selection_state = {}
         self.reorganize_current_page = 0
         self.reorganize_items_per_page = 200 # Manageable number of widgets
-        # --- END: Reorganize Tab Pagination Variables ---
+        self.rename_preview_cache: Dict[Path, Path] = {} # For the new preview feature
+        # --- END: Reorganize Tab Variables ---
 
         self.api_provider_var = ctk.StringVar(value="TMDB" if self.config.API_PROVIDER == "tmdb" else "OMDb")
         self.enabled_vars = {
@@ -261,10 +266,11 @@ class App(ctk.CTk):
         self.anime_radio = ctk.CTkRadioButton(ff, text="Anime Folder", variable=self.fallback_var, value="anime"); self.anime_radio.pack(side="left", padx=5)
         self.update_fallback_ui_state()
 
-    # --- START: REWRITTEN Reorganize Tab with Pagination ---
+    # --- START: REWRITTEN Reorganize Tab with Preview Feature ---
     def create_reorganize_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
-        parent.grid_rowconfigure(2, weight=1)
+        parent.grid_rowconfigure(2, weight=1) # File list
+        parent.grid_rowconfigure(4, weight=1) # Preview list
 
         # --- Top Controls ---
         top_frame = ctk.CTkFrame(parent); top_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew"); top_frame.grid_columnconfigure(1, weight=1)
@@ -286,11 +292,17 @@ class App(ctk.CTk):
         self.reorganize_next_button = ctk.CTkButton(check_frame, text="Next >", width=60, command=self.reorganize_next_page, state="disabled"); self.reorganize_next_button.pack(side="left", padx=5)
         self.reorganize_status_label = ctk.CTkLabel(check_frame, text="Selected: 0"); self.reorganize_status_label.pack(side="right")
         
+        # --- Preview Frame ---
+        self.reorganize_preview_frame = ctk.CTkScrollableFrame(parent, label_text="Rename Preview"); self.reorganize_preview_frame.grid(row=4, column=0, padx=10, pady=5, sticky="nsew")
+
         # --- Bottom Action Buttons ---
-        bottom_frame = ctk.CTkFrame(parent); bottom_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew"); bottom_frame.grid_columnconfigure((0, 1), weight=1)
-        self.reorganize_folders_button = ctk.CTkButton(bottom_frame, text="Organize Folder Structure for Selected", command=self.start_folder_reorganization); self.reorganize_folders_button.grid(row=0, column=0, padx=(0, 5), pady=5, sticky="ew")
-        self.rename_files_button = ctk.CTkButton(bottom_frame, text="Rename Selected Files", command=self.start_file_renaming); self.rename_files_button.grid(row=0, column=1, padx=(5, 0), pady=5, sticky="ew")
-        self.reorganize_dry_run_var = ctk.BooleanVar(value=False); ctk.CTkCheckBox(bottom_frame, text="Dry Run", variable=self.reorganize_dry_run_var).grid(row=1, column=0, columnspan=2, padx=10, pady=10, sticky="w")
+        bottom_frame = ctk.CTkFrame(parent); bottom_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew"); bottom_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        self.reorganize_folders_button = ctk.CTkButton(bottom_frame, text="Organize Selected into Folders", command=self.start_folder_reorganization); self.reorganize_folders_button.grid(row=0, column=0, padx=(0, 5), pady=5, sticky="ew")
+        self.rename_preview_button = ctk.CTkButton(bottom_frame, text="Preview Rename for Selected", command=self.start_rename_preview); self.rename_preview_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.apply_rename_button = ctk.CTkButton(bottom_frame, text="Apply Rename", command=self.start_file_renaming, state="disabled"); self.apply_rename_button.grid(row=0, column=2, padx=(5, 0), pady=5, sticky="ew")
+        
+        self.quick_clean_var = ctk.BooleanVar(value=False); ctk.CTkCheckBox(bottom_frame, text="Quick Clean (No API)", variable=self.quick_clean_var, command=self.clear_rename_preview).grid(row=1, column=1, padx=10, pady=10, sticky="w")
+        self.reorganize_dry_run_var = ctk.BooleanVar(value=False); ctk.CTkCheckBox(bottom_frame, text="Dry Run (for all reorganize actions)", variable=self.reorganize_dry_run_var).grid(row=1, column=0, padx=10, pady=10, sticky="w")
     # --- END: REWRITTEN Reorganize Tab ---
         
     def create_mismatch_tab(self, parent):
@@ -465,27 +477,82 @@ class App(ctk.CTk):
         if self.sorter_thread and self.sorter_thread.is_alive(): self.stop_running_task()
         else: self.start_task(lambda s: s.start_watch_mode(), True)
 
-    def _start_reorganize_task(self, task_function, action_name: str):
+    def _start_reorganize_task(self, task_function, action_name: str, task_args: tuple):
         if self.sorter_thread and self.sorter_thread.is_alive(): logging.warning("A task is already running."); return
-        target_path = Path(self.reorganize_path_entry.get().strip())
-        selected_files = self._get_selected_reorganize_files()
-        if not selected_files: messagebox.showwarning("No Files Selected", f"Please select files to {action_name}."); return
         self.update_config_from_ui(); self.progress_frame.grid(); self.progress_bar.set(0); self.progress_label.configure(text="Initializing...")
         dry_run = self.reorganize_dry_run_var.get()
         if dry_run: logging.info(f"🧪 DRY RUN MODE ENABLED for {action_name} task.")
         self.sorter_instance = backend.MediaSorter(self.config, dry_run, self._update_progress)
-        self.sorter_thread = threading.Thread(target=task_function, args=(self.sorter_instance, target_path, selected_files), daemon=True); self.sorter_thread.start()
+        self.sorter_thread = threading.Thread(target=task_function, args=(self.sorter_instance, *task_args), daemon=True); self.sorter_thread.start()
         self.monitor_active_task()
 
-    def start_folder_reorganization(self): self._start_reorganize_task(lambda s, p, f: s.reorganize_folder_structure(p, file_list=f), "reorganize")
-    def start_file_renaming(self): self._start_reorganize_task(lambda s, p, f: s.rename_files_in_library(p, file_list=f), "rename")
+    def start_folder_reorganization(self):
+        target_path = Path(self.reorganize_path_entry.get().strip())
+        selected_files = self._get_selected_reorganize_files()
+        if not selected_files: messagebox.showwarning("No Files Selected", "Please select files to reorganize."); return
+        self._start_reorganize_task(lambda s, p, f: s.reorganize_folder_structure(p, file_list=f), "reorganize", (target_path, selected_files))
+
+    # --- START: NEW/MODIFIED RENAME METHODS for Preview Workflow ---
+    def start_rename_preview(self):
+        selected_files = self._get_selected_reorganize_files()
+        if not selected_files: messagebox.showwarning("No Files Selected", "Please select files to preview for renaming."); return
+        
+        self.clear_rename_preview()
+        task_function = lambda s, files, quick_clean: self.run_preview_in_thread(s, files, quick_clean)
+        self._start_reorganize_task(task_function, "rename-preview", (selected_files, self.quick_clean_var.get()))
+
+    def run_preview_in_thread(self, sorter_instance, files_to_preview, quick_clean):
+        target_path = Path(self.reorganize_path_entry.get())
+        rename_plan = sorter_instance.generate_rename_plan(target_path, files_to_preview, quick_clean)
+        self.after(0, self.display_rename_preview, rename_plan)
+
+    def display_rename_preview(self, rename_plan: Dict[Path, Path]):
+        for widget in self.reorganize_preview_frame.winfo_children(): widget.destroy()
+        self.rename_preview_cache = rename_plan
+
+        if not rename_plan:
+            ctk.CTkLabel(self.reorganize_preview_frame, text="Preview complete. No files need renaming.").pack(pady=5)
+            self.apply_rename_button.configure(state="disabled")
+            return
+
+        for old_path, new_path in rename_plan.items():
+            row_frame = ctk.CTkFrame(self.reorganize_preview_frame, fg_color="transparent")
+            row_frame.pack(fill="x", expand=True)
+            row_frame.grid_columnconfigure(0, weight=1)
+            row_frame.grid_columnconfigure(2, weight=1)
+            ctk.CTkLabel(row_frame, text=old_path.name, text_color="gray60", anchor="w").grid(row=0, column=0, sticky="ew", padx=5)
+            ctk.CTkLabel(row_frame, text="->", text_color="gray80").grid(row=0, column=1, padx=10)
+            ctk.CTkLabel(row_frame, text=new_path.name, text_color="#4CAF50", anchor="w").grid(row=0, column=2, sticky="ew", padx=5)
+        
+        self.apply_rename_button.configure(state="normal")
+        messagebox.showinfo("Preview Ready", f"Preview generated for {len(rename_plan)} files. Review the changes below and click 'Apply Rename' to proceed.")
+
+    def clear_rename_preview(self):
+        """Called when selections change or quick clean is toggled."""
+        for widget in self.reorganize_preview_frame.winfo_children(): widget.destroy()
+        self.rename_preview_cache = {}
+        self.apply_rename_button.configure(state="disabled")
+
+    def start_file_renaming(self):
+        if not self.rename_preview_cache:
+            messagebox.showerror("Error", "No rename plan found. Please generate a preview first.")
+            return
+        if not messagebox.askyesno("Confirm Rename", f"Are you sure you want to rename {len(self.rename_preview_cache)} file(s)? This action cannot be undone."):
+            return
+
+        self._start_reorganize_task(lambda s, plan: s.rename_files_in_library(plan), "rename", (self.rename_preview_cache,))
+        self.clear_rename_preview()
+    # --- END: NEW/MODIFIED RENAME METHODS ---
 
     def scan_reorganize_folder(self):
         target_path_str = self.reorganize_path_entry.get().strip()
         if not target_path_str: messagebox.showerror("Error", "Please select a target library folder to scan."); return
         target_path = Path(target_path_str)
         if not target_path.is_dir(): messagebox.showerror("Error", f"Path is not a valid folder:\n{target_path}"); return
+        
         for widget in self.reorganize_files_frame.winfo_children(): widget.destroy()
+        self.clear_rename_preview() 
+        
         self.reorganize_all_files = []; self.reorganize_selection_state = {}; self.reorganize_current_page = 0
         self.reorganize_prev_button.configure(state="disabled"); self.reorganize_next_button.configure(state="disabled")
         logging.info(f"Scanning '{target_path}' for media files...")
@@ -524,6 +591,7 @@ class App(ctk.CTk):
     def reorganize_toggle_selection(self, path: Path, var: ctk.BooleanVar):
         self.reorganize_selection_state[path] = var.get()
         self.update_reorganize_ui()
+        self.clear_rename_preview() # Clear preview if selection changes
 
     def reorganize_select_page(self, select=True):
         start_index = self.reorganize_current_page * self.reorganize_items_per_page
@@ -531,10 +599,12 @@ class App(ctk.CTk):
         for i in range(start_index, min(end_index, len(self.reorganize_all_files))):
             self.reorganize_selection_state[self.reorganize_all_files[i]] = select
         self.reorganize_display_page()
+        self.clear_rename_preview() # Clear preview if selection changes
 
     def reorganize_select_all(self):
         for path in self.reorganize_all_files: self.reorganize_selection_state[path] = True
         self.reorganize_display_page()
+        self.clear_rename_preview() # Clear preview if selection changes
 
     def reorganize_previous_page(self):
         if self.reorganize_current_page > 0: self.reorganize_current_page -= 1; self.reorganize_display_page()
@@ -556,15 +626,21 @@ class App(ctk.CTk):
     def monitor_active_task(self):
         is_running = self.sorter_thread and self.sorter_thread.is_alive()
         if is_running:
-            self._set_options_state("disabled"); self.sort_now_button.configure(state="disabled")
-            self.reorganize_folders_button.configure(state="disabled"); self.rename_files_button.configure(state="disabled")
+            self._set_options_state("disabled")
+            self.sort_now_button.configure(state="disabled")
+            self.reorganize_folders_button.configure(state="disabled")
+            self.rename_preview_button.configure(state="disabled")
+            self.apply_rename_button.configure(state="disabled")
             self.watch_button.configure(text="Stop Watchdog" if self.is_watching else "Running...", state="normal" if self.is_watching else "disabled")
             if self.sorter_instance and self.sorter_instance.is_processing: self.stop_button.configure(state="normal", text="STOP", fg_color="#D32F2F", hover_color="#B71C1C");
             elif self.is_watching: self.stop_button.configure(state="disabled", text="IDLE", fg_color="#FBC02D", text_color="black");
             if not self.progress_frame.winfo_viewable() and self.sorter_instance.is_processing : self.progress_frame.grid()
             self.after(500, self.monitor_active_task)
         else:
-            self._set_options_state("normal"); self.reorganize_folders_button.configure(state="normal"); self.rename_files_button.configure(state="normal")
+            self._set_options_state("normal")
+            self.reorganize_folders_button.configure(state="normal")
+            self.rename_preview_button.configure(state="normal")
+            # Apply button state is managed by the preview logic, so we don't touch it here
             if self.is_watching: logging.info("✅ Watchdog stopped.")
             else: logging.info("✅ Task finished.")
             self.sort_now_button.configure(state="normal"); self.watch_button.configure(text="Launch Watchdog", state="normal")
