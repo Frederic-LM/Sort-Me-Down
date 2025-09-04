@@ -12,7 +12,19 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
-Version 6.6.0
+Version 6.6.6
+- FIXED: query_tvdb vrong api call
+
+Version 6.6.5
+- FIXED: UnboundLocalError crash in sort_item by standardizing on 'stats' variable.
+- FIXED: query_tvdb method to correctly filter search results for relevant media types.
+
+Version 6.6.4
+- FIXED: Language split logic to correctly match language codes (e.g., 'fr') with full language names (e.g., 'French').
+- FIXED: API search query logic to handle titles with years correctly.
+
+Version 6.6.3
+- Use of year param for API
 - FEATURE: Lightweight, cross-platform notifications and startup logic.
 - FIXED: Statistical bug for mismatched files.
 - FIXED: Anime classification for clean filenames.
@@ -24,6 +36,7 @@ Version 6.4.0
 - FEATURE: TVDB API Integration
 - FEATURE: Improved smart API provider logic
 """
+
 
 from pathlib import Path
 import re
@@ -142,6 +155,20 @@ class TitleCleaner:
     METADATA_BREAKPOINT_PATTERN = re.compile(r'('r'\s[\(\[]?\d{4}[\)\]]?\b'r'|\s[Ss]\d{1,2}[Ee]\d{1,2}\b'r'|\s[Ss]\d{1,2}\b'r'|\sSeason\s\d{1,2}\b'r'|\s\d{3,4}p\b'r'|\s(WEBRip|BluRay|BDRip|DVDRip|HDRip|WEB-DL|HDTV|CR)\b'r'|\s(x264|x265|H\.?264|H\.?265|HEVC|AVC|AAC2\.0)\b'r'|\s(Msub)\b'r')', re.IGNORECASE)
 
     @classmethod
+    def extract_search_terms(cls, name: str, custom_strings: Set[str]) -> Tuple[str, Optional[str]]:
+        year = cls.extract_year(name)
+        cleaned_name = re.sub(r'[\._]', ' ', name)
+        for s in custom_strings:
+            cleaned_name = re.sub(r'\b' + re.escape(s) + r'\b', ' ', cleaned_name, flags=re.IGNORECASE)
+        title_part = cleaned_name[:match.start()] if (match := cls.METADATA_BREAKPOINT_PATTERN.search(cleaned_name)) else cleaned_name
+        final_title = re.sub(r'\[[^\]]+\]', '', title_part).strip()
+        if year:
+            final_title = final_title.replace(year, '')
+        final_title = re.sub(r'\s+', ' ', final_title).strip()
+        final_title = final_title.strip(' -')
+        return final_title, year
+
+    @classmethod
     def quick_clean_stem(cls, name: str, custom_strings: Set[str]) -> str:
         cleaned_name = re.sub(r'[\._]', ' ', name)
         for s in custom_strings:
@@ -156,13 +183,6 @@ class TitleCleaner:
         cleaned_name = re.sub(r'\[[^\]]+\]|\([^)]*\b(source|custom)\b[^)]*\)', '', cleaned_name, flags=re.IGNORECASE)
         cleaned_name = re.sub(r'\s+', ' ', cleaned_name).strip()
         return cleaned_name
-
-    @classmethod
-    def clean_for_search(cls, name: str, custom_strings: Set[str]) -> str:
-        nws = re.sub(r'[\._]', ' ', name); tt = nws
-        for s in custom_strings: tt = re.sub(r'\b' + re.escape(s) + r'\b', ' ', tt, flags=re.IGNORECASE)
-        tp = tt[:match.start()] if (match := cls.METADATA_BREAKPOINT_PATTERN.search(tt)) else tt
-        ct = re.sub(r'\[[^\]]+\]', '', tp); return re.sub(r'\s+', ' ', ct).strip()
 
     @classmethod
     def extract_season_info(cls, filename: str) -> Optional[int]:
@@ -185,11 +205,10 @@ class TitleCleaner:
         cy = datetime.now().year; py = [m for m in ms if 1900 <= int(m) <= cy + 2]; return py[-1] if py else None
 
 class APIClient:
-    # ... (This class is unchanged from the last good version)
     def __init__(self, config: Config):
         self.config = config
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'SortMeDown/Engine/6.6.0'})
+        self.session.headers.update({'User-Agent': 'SortMeDown/Engine/6.6.2'})
         self._tvdb_token_lock = threading.Lock()
 
     def _get_tvdb_token(self) -> Optional[str]:
@@ -255,31 +274,46 @@ class APIClient:
         except requests.RequestException as e:
             return False, f"Network request failed: {e}"
 
-    def query_omdb(self, title: str) -> Optional[Dict[str, Any]]:
+    def query_omdb(self, title: str, year: Optional[str] = None) -> Optional[Dict[str, Any]]:
         try:
-            for p in [{"t": title}, {"s": title}]:
-                fp = {**p, "apikey": self.config.OMDB_API_KEY}
-                r = self.session.get(self.config.OMDB_URL, params=fp, timeout=10)
-                r.raise_for_status()
-                d = r.json()
-                if d.get("Response") == "True":
-                    if "Search" in d:
-                        id_p = {"i": d["Search"][0]["imdbID"], "apikey": self.config.OMDB_API_KEY}
-                        id_r = self.session.get(self.config.OMDB_URL, params=id_p, timeout=10)
-                        return id_r.json()
-                    return d
+            params = {"apikey": self.config.OMDB_API_KEY}
+            if year:
+                params["y"] = year
+            params["t"] = title
+            r = self.session.get(self.config.OMDB_URL, params=params, timeout=10)
+            r.raise_for_status()
+            d = r.json()
+            if d.get("Response") == "True":
+                return d
+            params.pop("t", None); params.pop("y", None)
+            params["s"] = title
+            r = self.session.get(self.config.OMDB_URL, params=params, timeout=10)
+            r.raise_for_status()
+            d = r.json()
+            if d.get("Response") == "True" and "Search" in d:
+                id_params = {"i": d["Search"][0]["imdbID"], "apikey": self.config.OMDB_API_KEY}
+                id_r = self.session.get(self.config.OMDB_URL, params=id_params, timeout=10)
+                return id_r.json()
         except requests.RequestException as e: logging.error(f"OMDb API request failed for '{title}': {e}")
         return None
 
-    def query_tmdb(self, title: str) -> Optional[Dict[str, Any]]:
+    def query_tmdb(self, title: str, year: Optional[str] = None) -> Optional[Dict[str, Any]]:
         try:
             sp = {"api_key": self.config.TMDB_API_KEY, "query": title}
+            if year:
+                sp["year"] = year
             sr = self.session.get(f"{self.config.TMDB_URL}/search/multi", params=sp, timeout=10)
             sr.raise_for_status()
             sd = sr.json()
             if not sd.get("results"): return None
-            fr = sd["results"][0]
-            mt, mid = fr.get("media_type"), fr.get("id")
+            best_result = sd["results"][0]
+            if year:
+                for result in sd["results"]:
+                    release_date = result.get("release_date") or result.get("first_air_date") or ""
+                    if release_date.startswith(year):
+                        best_result = result
+                        break
+            mt, mid = best_result.get("media_type"), best_result.get("id")
             if mt not in ["movie", "tv"]: return None
             dp = {"api_key": self.config.TMDB_API_KEY, "append_to_response": "credits,translations"}
             dr = self.session.get(f"{self.config.TMDB_URL}/{mt}/{mid}", params=dp, timeout=10)
@@ -288,36 +322,53 @@ class APIClient:
         except requests.RequestException as e: logging.error(f"TMDB API request failed for '{title}': {e}")
         return None
 
-    def query_tvdb(self, title: str) -> Optional[Dict[str, Any]]:
+    def query_tvdb(self, title: str, year: Optional[str] = None) -> Optional[Dict[str, Any]]:
         token = self._get_tvdb_token()
-        if not token:
-            logging.error("Cannot query TVDB: No valid authentication token")
+        if not token: 
+            logging.error("No TVDB token available")
             return None
-        try:
-            headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-            search_params = {"query": title, "limit": 5}
-            response = self.session.get(f"{self.config.TVDB_URL}/search", headers=headers, params=search_params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            if data.get("status") == "success" and data.get("data"):
-                media_results = [item for item in data["data"] if item.get("objectType") in ["series", "movie"]]
-                if not media_results: return None
-                best_match = media_results[0]
-                tvdb_id = best_match.get("tvdb_id")
-                object_type = best_match.get("objectType")
-                if tvdb_id:
-                    if object_type == "series": detail_url = f"{self.config.TVDB_URL}/series/{tvdb_id}/extended"
-                    elif object_type == "movie": detail_url = f"{self.config.TVDB_URL}/movies/{tvdb_id}/extended"
-                    else: return None
-                    detail_response = self.session.get(detail_url, headers=headers, timeout=10)
-                    detail_response.raise_for_status()
-                    detail_data = detail_response.json()
-                    if detail_data.get("status") == "success":
-                        return detail_data.get("data")
-            return None
-        except requests.RequestException as e:
-            logging.error(f"TVDB API request failed for '{title}': {e}")
-            return None
+            
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+        for search_type in ["series", "movie"]:
+            try:
+                search_params = {"query": title, "type": search_type}
+                if year:
+                    search_params["year"] = year
+
+                logging.info(f"TVDB: Searching for TYPE='{search_type}' with params: {search_params}")
+                response = self.session.get(f"{self.config.TVDB_URL}/search", headers=headers, params=search_params, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("data"):
+
+                        best_match = data["data"][0]
+                        tvdb_id = best_match.get("tvdb_id")
+                        object_type = best_match.get("objectType")
+
+                        if tvdb_id and object_type in ["series", "movie"]:
+
+                            endpoint = "series" if object_type == "series" else "movies"
+                            detail_url = f"{self.config.TVDB_URL}/{endpoint}/{tvdb_id}/extended"
+                            
+                            detail_response = self.session.get(detail_url, headers=headers, timeout=10)
+                            
+                            if detail_response.status_code == 200:
+                                detail_data = detail_response.json()
+                                if detail_data.get("status") == "success":
+                                    logging.info(f"TVDB found definitive match: '{best_match.get('name')}'")
+                                    return detail_data.get("data") 
+                            else:
+                                logging.warning(f"TVDB detail lookup for {tvdb_id} failed with status: {detail_response.status_code}")
+            
+            except requests.RequestException as e:
+                logging.warning(f"A TVDB attempt failed for type '{search_type}': {e}")
+                continue 
+
+        logging.warning(f"TVDB could not find a definitive match for '{title}'.")
+        return None
+  
 
     def query_anilist(self, title: str) -> Optional[Dict[str, Any]]:
         q = '''query ($search: String) { Media(search: $search, type: ANIME) { title { romaji english native } format, genres, season, seasonYear, episodes } }'''
@@ -329,8 +380,8 @@ class APIClient:
         except requests.RequestException as e: logging.error(f"AniList API request failed for '{title}': {e}")
         return None
 
+
 class MediaClassifier:
-    # ... (This class is unchanged from the last good version)
     def __init__(self, api_client: APIClient):
         self.api_client = api_client
 
@@ -371,12 +422,12 @@ class MediaClassifier:
         return provider_order
 
     def classify_media(self, name: str, custom_strings: Set[str], filename: str = "") -> MediaInfo:
-        clean_name = TitleCleaner.clean_for_search(name, custom_strings)
-        if not clean_name:
+        clean_title, year = TitleCleaner.extract_search_terms(name, custom_strings)
+        if not clean_title:
             logging.warning(f"Could not extract a clean name from '{name}'. Skipping.")
             return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
-        logging.info(f"Classifying: '{name}' -> Clean search: '{clean_name}'")
-        content_hints = self._detect_content_hints(filename or name, clean_name)
+        logging.info(f"Classifying: '{name}' -> Clean search: '{clean_title}'" + (f" (Year: {year})" if year else ""))
+        content_hints = self._detect_content_hints(filename or name, clean_title)
         cfg = self.api_client.config
         provider_order = self._get_optimal_provider_order(content_hints, cfg)
         if not provider_order:
@@ -386,14 +437,15 @@ class MediaClassifier:
         anilist_data = None
         if content_hints['likely_anime'] and (cfg.ANIME_MOVIES_ENABLED or cfg.ANIME_SERIES_ENABLED):
             logging.info("Anime suspected - checking AniList first")
-            anilist_data = self.api_client.query_anilist(clean_name)
+            anilist_data = self.api_client.query_anilist(clean_title)
             sleep(cfg.REQUEST_DELAY)
             if anilist_data:
                 return self._classify_from_anilist(anilist_data)
         main_api_data, successful_provider = None, None
         for provider in provider_order:
             logging.info(f"Trying {provider.upper()} API...")
-            main_api_data = getattr(self.api_client, f"query_{provider}")(clean_name)
+            query_func = getattr(self.api_client, f"query_{provider}")
+            main_api_data = query_func(clean_title, year=year)
             sleep(cfg.REQUEST_DELAY)
             if main_api_data:
                 successful_provider = provider
@@ -403,12 +455,12 @@ class MediaClassifier:
                 logging.warning(f"{provider.upper()} returned no results")
         if not main_api_data and not anilist_data and (cfg.ANIME_MOVIES_ENABLED or cfg.ANIME_SERIES_ENABLED):
             logging.info("Main APIs failed - trying AniList as fallback")
-            anilist_data = self.api_client.query_anilist(clean_name)
+            anilist_data = self.api_client.query_anilist(clean_title)
             if anilist_data:
                 return self._classify_from_anilist(anilist_data)
         if main_api_data:
             return self._classify_from_main_api(main_api_data, successful_provider)
-        logging.warning(f"No API results found for: {clean_name}")
+        logging.warning(f"No API results found for: {clean_title}" + (f" ({year})" if year else ""))
         return MediaInfo(title=name, year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
 
     def _classify_from_main_api(self, data: Dict[str, Any], provider: str) -> MediaInfo:
@@ -452,23 +504,33 @@ class MediaClassifier:
 
     def _classify_from_tvdb(self, data: Dict[str, Any]) -> MediaInfo:
         title = data.get("name", "Unknown")
-        year = (data.get("firstAired") or "").split('-')[0]
-        series_type = data.get("type", "").lower()
-        if series_type == "movie": media_type = MediaType.MOVIE
-        else: media_type = MediaType.TV_SERIES
+        year = data.get("year") or (data.get("firstAired") or "").split('-')[0]
+        
+        # --- THE CRITICAL FIX ---
+        # The 'type' field from the detailed record is the source of truth.
+        media_type_str = data.get("type", "").lower()
+        if media_type_str == "movie":
+            media_type = MediaType.MOVIE
+        elif media_type_str == "series":
+            media_type = MediaType.TV_SERIES
+        else:
+            media_type = MediaType.UNKNOWN
+        # --- END OF FIX ---
+
         genres = [g.get("name", "").lower() for g in data.get("genres", []) if g.get("name")]
         country = data.get("originalCountry")
         is_anime = "anime" in genres or ("animation" in genres and country == "jpn")
         if is_anime:
-            media_type = MediaType.ANIME_MOVIE if media_type == MediaType.MOVIE else MediaType.ANIME_SERIES
+            if media_type == MediaType.MOVIE: media_type = MediaType.ANIME_MOVIE
+            elif media_type == MediaType.TV_SERIES: media_type = MediaType.ANIME_SERIES
+        
         lang_code = data.get("originalLanguage")
         lang_map = {"eng": "English", "jpn": "Japanese", "fra": "French", "deu": "German", "spa": "Spanish"}
         language = lang_map.get(lang_code, lang_code)
-        genre_str = ", ".join([g.get("name", "") for g in data.get("genres", [])])
+        genre_str = ", ".join([g["name"] for g in data.get("genres", [])])
         return MediaInfo(title=title, year=year, media_type=media_type, language=language, genre=genre_str)
 
 class FileManager:
-    # ... (This class is unchanged)
     def __init__(self, cfg: Config, dry_run: bool): self.cfg, self.dry_run = cfg, dry_run
     def _find_sidecar_files(self, pf: Path) -> List[Path]:
         s, st = [], pf.stem
@@ -507,7 +569,6 @@ class FileManager:
             except Exception as e: logging.error(f"Failed to delete file '{ftd.name}': {e}")
                 
 class DirectoryWatcher:
-    # ... (This class is unchanged)
     def __init__(self, config: Config): self.config, self.last_mtime = config, 0; self._scan()
     def _scan(self):
         if (sd := self.config.get_path('SOURCE_DIR')) and sd.exists(): self.last_mtime = sd.stat().st_mtime
@@ -561,84 +622,103 @@ class MediaSorter:
         year_in_file = TitleCleaner.extract_year(file_path.name) or TitleCleaner.extract_year(term)
         if year_in_file and info.year and year_in_file != info.year:
             logging.warning(f"CONFLICT: Filename year '{year_in_file}' mismatches API year '{info.year}'. Reverting to safe fallback.")
-            clean_title = TitleCleaner.clean_for_search(term, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+            clean_title, _ = TitleCleaner.extract_search_terms(term, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
             info.media_type, info.title, info.year = MediaType.UNKNOWN, clean_title, year_in_file
         return info
         
     def sort_item(self, item: Path, override_name: Optional[str] = None):
         if item.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS: return
         filename_context = item.name
+        
         if override_name:
             search_term = override_name
             initial_info = self.classifier.classify_media(override_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
         else:
             is_sub = item.parent.resolve() != self.cfg.get_path('SOURCE_DIR').resolve()
-            search_term = item.parent.name if is_sub else item.stem
+            search_term = item.parent.name if is_sub else item.name
             initial_info = self.classifier.classify_media(search_term, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
-            if initial_info.media_type == MediaType.UNKNOWN and is_sub and item.stem.lower() != search_term.lower():
-                logging.warning(f"Folder search for '{search_term}' failed. Trying filename: '{item.stem}'")
-                fb_info = self.classifier.classify_media(item.stem, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
+            if initial_info.media_type == MediaType.UNKNOWN and is_sub and item.name.lower() != search_term.lower():
+                logging.warning(f"Folder search for '{search_term}' failed. Trying filename: '{item.name}'")
+                fb_info = self.classifier.classify_media(item.name, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
                 if fb_info.media_type != MediaType.UNKNOWN:
                     logging.info("Filename fallback successful.")
-                    initial_info, search_term = fb_info, item.stem
+                    initial_info, search_term = fb_info, item.name
                 else:
-                    logging.warning(f"Filename fallback for '{item.stem}' also failed.")
+                    logging.warning(f"Filename fallback for '{item.name}' also failed.")
+        
         info = self._validate_api_result(item, search_term, initial_info)
         files_to_move = [item] + self.fm._find_sidecar_files(item)
-        s = self.stats
+        stats = self.stats
         logging.info(f"Class: {info.media_type.value} | Title: '{info.get_folder_name()}'" + (f" | Found {len(files_to_move) - 1} sidecars." if len(files_to_move) > 1 else ""))
         
         if info.media_type == MediaType.UNKNOWN:
-            if self.cfg.CLEANUP_MODE_ENABLED: logging.warning("Skipping fallback for UNKNOWN in Cleanup Mode."); return
+            if self.cfg.CLEANUP_MODE_ENABLED: return
             mpath = self._get_mismatched_path()
-            if not mpath: logging.error("Mismatched dir not set. Skipping."); s['errors'] += 1; return
+            if not mpath: logging.error("Mismatched dir not set. Skipping."); stats['errors'] += 1; return
             is_series = TitleCleaner.extract_season_info(item.name) is not None
             if is_series:
                 fdest = self.cfg.FALLBACK_SHOW_DESTINATION
-                if fdest == "ignore": logging.info("Mismatched series set to 'ignore'."); return
-                logging.info(f"Mismatched series routing to '{fdest}' destination.")
+                if fdest == "ignore": return
                 dmap = {"tv": self.cfg.get_path('TV_SHOWS_DIR'), "anime": self.cfg.get_path('ANIME_SERIES_DIR'), "mismatched": mpath}
                 bdir = dmap.get(fdest)
-                if not bdir: logging.error(f"Fallback dir '{fdest}' not set."); s['errors'] += 1; return
+                if not bdir: logging.error(f"Fallback dir '{fdest}' not set."); stats['errors'] += 1; return
                 df = bdir / info.get_folder_name() / f"Season {TitleCleaner.extract_season_info(item.name) or 1:02d}"
                 if self.fm.move_file_group(files_to_move, df):
                     key = 'tv' if fdest == 'tv' else 'anime_series' if fdest == 'anime' else 'unknown'
-                    s[key] += 1
-                else: s['errors'] += 1
+                    stats[key] = stats.get(key, 0) + 1
+                else: stats['errors'] += 1
             else:
-                logging.info("Unidentified item is not a series. Routing to Mismatched folder.")
                 if self.fm.move_file_group(files_to_move, mpath):
-                    s['unknown'] += 1
+                    stats['unknown'] = stats.get('unknown', 0) + 1
                     if self.cfg.NOTIFY_ON_MISMATCH:
                         send_notification(title="File Needs Review", message=f"'{item.name}' was moved to the Mismatched folder.")
-                else:
-                    s['errors'] += 1
+                else: stats['errors'] += 1
             return
             
         type_enabled_map = { MediaType.MOVIE: self.cfg.MOVIES_ENABLED, MediaType.TV_SERIES: self.cfg.TV_SHOWS_ENABLED, MediaType.ANIME_MOVIE: self.cfg.ANIME_MOVIES_ENABLED, MediaType.ANIME_SERIES: self.cfg.ANIME_SERIES_ENABLED }
-        if not type_enabled_map.get(info.media_type, True):
-            logging.info(f"Skipping {info.media_type.value} sort (disabled)."); return
+        if not type_enabled_map.get(info.media_type, True): return
+        
         base_dir_map = { MediaType.MOVIE: self.cfg.get_path('MOVIES_DIR'), MediaType.TV_SERIES: self.cfg.get_path('TV_SHOWS_DIR'), MediaType.ANIME_MOVIE: self.cfg.get_path('ANIME_MOVIES_DIR'), MediaType.ANIME_SERIES: self.cfg.get_path('ANIME_SERIES_DIR') }
         base_dir = item.parent if self.cfg.CLEANUP_MODE_ENABLED else base_dir_map.get(info.media_type)
+        
         if info.media_type == MediaType.MOVIE and self.cfg.get_path('SPLIT_MOVIES_DIR') and self.cfg.LANGUAGES_TO_SPLIT and not self.cfg.CLEANUP_MODE_ENABLED:
-            movie_langs = {l.strip().lower() for l in (info.language or "").split(',')}
-            split_langs = {l.strip().lower() for l in self.cfg.LANGUAGES_TO_SPLIT}
-            should_split = "all" in split_langs and "english" not in movie_langs or not movie_langs.isdisjoint(split_langs)
-            if should_split: logging.info(f"🔵⚪🔴 Movie language '{info.language}' matches split rule."); base_dir = self.cfg.get_path('SPLIT_MOVIES_DIR')
-        if not base_dir: logging.error(f"Target dir for {info.media_type.value} not set."); s['errors'] += 1; return
+            movie_langs_full = [lang.strip().lower() for lang in (info.language or "").split(',')]
+            split_lang_codes = [code.strip().lower() for code in self.cfg.LANGUAGES_TO_SPLIT]
+            should_split, matched_code, matched_reason = False, "", ""
+            for code in split_lang_codes:
+                if any(full_lang.startswith(code) for full_lang in movie_langs_full):
+                    should_split, matched_code, matched_reason = True, code, f"API language '{info.language}'"
+                    break
+            if not should_split:
+                original_filename_lower = item.name.lower()
+                for lang_name in ['french', 'francais', 'français']:
+                    if lang_name in original_filename_lower and 'fr' in split_lang_codes:
+                        should_split, matched_code, matched_reason = True, 'fr', f"filename keyword '{lang_name}'"
+                        break
+                if not should_split:
+                    for custom_str in self.cfg.CUSTOM_STRINGS_TO_REMOVE:
+                        if custom_str.lower() in original_filename_lower and 'fr' in split_lang_codes:
+                             should_split, matched_code, matched_reason = True, 'fr', f"filename keyword '{custom_str}'"
+                             break
+            if should_split:
+                logging.info(f"🔵⚪🔴 Movie matches split rule '{matched_code}' based on {matched_reason}. Moving to split directory.")
+                base_dir = self.cfg.get_path('SPLIT_MOVIES_DIR')
+
+        if not base_dir: logging.error(f"Target dir for {info.media_type.value} not set."); stats['errors'] += 1; return
+        
         if info.media_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]:
             key = 'anime_movies' if info.media_type == MediaType.ANIME_MOVIE else 'movies'
             if base_dir == self.cfg.get_path('SPLIT_MOVIES_DIR'): key = 'split_lang_movies'
             dest_folder = base_dir / info.get_folder_name()
-            if self.cfg.CLEANUP_MODE_ENABLED and dest_folder.resolve() == item.parent.resolve(): logging.info(f"Skipping move, '{item.name}' is already in the correct folder."); s[key] = s.get(key, 0) + 1; return
-            if self.fm.move_file_group(files_to_move, dest_folder): s[key] = s.get(key, 0) + 1
-            else: s['errors'] += 1
+            if self.cfg.CLEANUP_MODE_ENABLED and dest_folder.resolve() == item.parent.resolve(): stats[key] = stats.get(key, 0) + 1; return
+            if self.fm.move_file_group(files_to_move, dest_folder): stats[key] = stats.get(key, 0) + 1
+            else: stats['errors'] += 1
         elif info.media_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
             key = 'anime_series' if info.media_type == MediaType.ANIME_SERIES else 'tv'
             dest_folder = base_dir / info.get_folder_name() / f"Season {TitleCleaner.extract_season_info(item.name) or 1:02d}"
-            if self.cfg.CLEANUP_MODE_ENABLED and dest_folder.resolve() == item.parent.resolve(): logging.info(f"Skipping move, '{item.name}' is already in correct folder."); s[key] += 1; return
-            if self.fm.move_file_group(files_to_move, dest_folder): s[key] += 1
-            else: s['errors'] += 1
+            if self.cfg.CLEANUP_MODE_ENABLED and dest_folder.resolve() == item.parent.resolve(): stats[key] = stats.get(key, 0) + 1; return
+            if self.fm.move_file_group(files_to_move, dest_folder): stats[key] = stats.get(key, 0) + 1
+            else: stats['errors'] += 1
 
     def reorganize_folder_structure(self, target_path: Path, file_list: Optional[List[Path]] = None):
         self.is_processing = True
@@ -652,7 +732,7 @@ class MediaSorter:
                 if self.stop_event.is_set(): logging.warning("Reorganization run aborted."); break
                 try:
                     logging.info(f"Analyzing: '{item.relative_to(target_path)}'")
-                    info = self.classifier.classify_media(item.stem, self.cfg.CUSTOM_STRINGS_TO_REMOVE, item.name)
+                    info = self.classifier.classify_media(item.name, self.cfg.CUSTOM_STRINGS_TO_REMOVE, item.name)
                     if info.media_type == MediaType.UNKNOWN:
                         logging.warning(f"SKIPPED: Could not identify '{item.name}', cannot determine destination folder.")
                         continue
@@ -691,11 +771,11 @@ class MediaSorter:
                     new_stem = TitleCleaner.quick_clean_stem(item.stem, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
                 else: 
                     is_in_subdir = item.parent.resolve() != target_path.resolve()
-                    search_term = item.parent.name if is_in_subdir else item.stem
+                    search_term = item.parent.name if is_in_subdir else item.name
                     info = self.classifier.classify_media(search_term, self.cfg.CUSTOM_STRINGS_TO_REMOVE, item.name)
-                    if info.media_type == MediaType.UNKNOWN and is_in_subdir and item.stem.lower() != search_term.lower():
-                        logging.warning(f"Folder search for '{search_term}' failed. Trying filename stem: '{item.stem}'")
-                        info = self.classifier.classify_media(item.stem, self.cfg.CUSTOM_STRINGS_TO_REMOVE, item.name)
+                    if info.media_type == MediaType.UNKNOWN and is_in_subdir and item.name.lower() != search_term.lower():
+                        logging.warning(f"Folder search for '{search_term}' failed. Trying filename stem: '{item.name}'")
+                        info = self.classifier.classify_media(item.name, self.cfg.CUSTOM_STRINGS_TO_REMOVE, item.name)
                         if info.media_type != MediaType.UNKNOWN: logging.info("Filename stem fallback successful.")
                     if info.media_type == MediaType.UNKNOWN:
                         logging.warning(f"SKIPPED: Could not identify '{item.name}' via API, cannot generate clean name."); continue
