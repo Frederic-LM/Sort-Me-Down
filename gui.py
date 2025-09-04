@@ -1,7 +1,20 @@
+# -*- coding: utf-8 -*-
 # gui.py
 """
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
+
+v6.6.0
+- FEATURE: Lightweight, cross-platform notifications and startup logic.
+- FIXED: Crashing bug in startup logic due to incorrect pyshortcuts call.
+- FIXED: Tab order and restored original About tab.
+
+v6.5.0
+- FEATURE: New start up logic.
+
+v6.4.0
+- FEATURE: TVDB API Integration
+- FEATURE: Improved smart API provider logic
 
 v6.2.7.0
 - ENHANCED: Refactored Reorganize with 2 windows
@@ -67,7 +80,7 @@ v6.0.2
 v6.0.1
 - BUG FIX: Fixed a crash in the 'Review' tab when scanning for files, caused by
   an unsupported 'text_align' argument in the CTkButton widget.
-...
+
 """
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
@@ -79,41 +92,28 @@ import pystray
 import sys
 import tkinter
 import os
-import datetime
 import webbrowser
 from typing import List, Dict
 import math
+import subprocess
+import shutil
 
 import bangbang as backend
 
 APP_NAME = "SortMeDown"
 
 def get_config_path() -> Path:
-    # Portable mode check: Look for config next to the executable first.
     try:
-        # PyInstaller sets sys._MEIPASS to the temp folder, so we need the exe's dir
-        if hasattr(sys, '_MEIPASS'):
-            portable_path = Path(sys.executable).parent / "config.json"
-        else:
-            portable_path = Path(__file__).parent / "config.json"
-        
+        if hasattr(sys, '_MEIPASS'): portable_path = Path(sys.executable).parent / "config.json"
+        else: portable_path = Path(__file__).parent / "config.json"
         if portable_path.exists():
             logging.info(f"Running in PORTABLE mode. Using config at: {portable_path}")
             return portable_path
-    except Exception:
-        pass # Fallback to AppData
-
-    # Standard mode: Use the OS-specific user data directory.
-    if sys.platform == "win32":
-        app_data_dir = Path(os.getenv("APPDATA")) / APP_NAME
-    elif sys.platform == "darwin": # macOS
-        app_data_dir = Path.home() / "Library" / "Application Support" / APP_NAME
-    else: # Linux and other UNIX-like
-        app_data_dir = Path.home() / ".config" / APP_NAME
-        
-    # Create the directory if it doesn't exist
+    except Exception: pass
+    if sys.platform == "win32": app_data_dir = Path(os.getenv("APPDATA")) / APP_NAME
+    elif sys.platform == "darwin": app_data_dir = Path.home() / "Library" / "Application Support" / APP_NAME
+    else: app_data_dir = Path.home() / ".config" / APP_NAME
     app_data_dir.mkdir(parents=True, exist_ok=True)
-    
     config_path = app_data_dir / "config.json"
     logging.info(f"Using standard config location: {config_path}")
     return config_path
@@ -121,7 +121,6 @@ def get_config_path() -> Path:
 CONFIG_FILE = get_config_path()
 
 def get_version_info():
-    """Parses the module's docstring to get version and history."""
     doc = __doc__ or ""
     lines = doc.strip().split('\n')
     version = "v?.?.?"; history_content = []
@@ -164,7 +163,7 @@ class GuiLoggingHandler(logging.Handler):
             except Exception: pass
 
 class App(ctk.CTk):
-    def __init__(self):
+    def __init__(self, start_hidden: bool = False):
         super().__init__()
         
         self.version, self.version_history = get_version_info()
@@ -172,27 +171,20 @@ class App(ctk.CTk):
         self.after(200, self._set_window_icon)
         
         self.config = backend.Config.load(CONFIG_FILE)
+        self.api_client = backend.APIClient(self.config)
         self.sorter_thread = None; self.sorter_instance = None; self.tray_icon = None; self.tray_thread = None; self.tab_view = None
         self.is_quitting = False; self.path_entries = {}; self.mismatch_buttons = {}; self.default_button_color = None; self.default_hover_color = None
         self.is_watching = False; self.log_is_visible = True; self.selected_mismatched_file = None
         
-        # --- START: Variables for Reorganize Tab ---
-        self.reorganize_all_files = []
-        self.reorganize_selection_state = {}
-        self.reorganize_current_page = 0
-        self.reorganize_items_per_page = 200 # Manageable number of widgets
-        self.rename_preview_cache: Dict[Path, Path] = {} # For the new preview feature
-        # --- END: Reorganize Tab Variables ---
+        self.reorganize_all_files = []; self.reorganize_selection_state = {}; self.reorganize_current_page = 0
+        self.reorganize_items_per_page = 200; self.rename_preview_cache: Dict[Path, Path] = {}
 
-        self.api_provider_var = ctk.StringVar(value="TMDB" if self.config.API_PROVIDER == "tmdb" else "OMDb")
-        self.enabled_vars = {
-            'MOVIES_ENABLED': ctk.BooleanVar(value=self.config.MOVIES_ENABLED),
-            'TV_SHOWS_ENABLED': ctk.BooleanVar(value=self.config.TV_SHOWS_ENABLED),
-            'ANIME_MOVIES_ENABLED': ctk.BooleanVar(value=self.config.ANIME_MOVIES_ENABLED),
-            'ANIME_SERIES_ENABLED': ctk.BooleanVar(value=self.config.ANIME_SERIES_ENABLED),
-        }
+        self.api_provider_var = ctk.StringVar(value={"omdb": "OMDb", "tmdb": "TMDB", "tvdb": "TVDB"}.get(self.config.API_PROVIDER, "OMDb"))
+        self.enabled_vars = { 'MOVIES_ENABLED': ctk.BooleanVar(value=self.config.MOVIES_ENABLED), 'TV_SHOWS_ENABLED': ctk.BooleanVar(value=self.config.TV_SHOWS_ENABLED), 'ANIME_MOVIES_ENABLED': ctk.BooleanVar(value=self.config.ANIME_MOVIES_ENABLED), 'ANIME_SERIES_ENABLED': ctk.BooleanVar(value=self.config.ANIME_SERIES_ENABLED) }
         self.dry_run_var = ctk.BooleanVar(value=False)
         self.fallback_var = ctk.StringVar(value=self.config.FALLBACK_SHOW_DESTINATION)
+        self.notify_on_mismatch_var = ctk.BooleanVar(value=self.config.NOTIFY_ON_MISMATCH)
+        self.start_with_windows_var = ctk.BooleanVar()
         
         self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(0, weight=0); self.grid_rowconfigure(1, weight=1); self.grid_rowconfigure(2, weight=0)
         self.controls_frame = ctk.CTkFrame(self); self.controls_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
@@ -205,10 +197,14 @@ class App(ctk.CTk):
         self.progress_frame.grid_remove()
 
         self.setup_logging(); self.protocol("WM_DELETE_WINDOW", self.quit_app); self.bind("<Unmap>", self.on_minimize); self.setup_tray_icon(); self.update_fallback_ui_state()
+        self._check_startup_status()
         self.after(500, self.check_api_keys_on_startup)
+        if start_hidden: self.withdraw()
 
     def check_api_keys_on_startup(self):
-        if not (self.config.OMDB_API_KEY and self.config.OMDB_API_KEY != "yourkey") and not (self.config.TMDB_API_KEY and self.config.TMDB_API_KEY != "yourkey"):
+        if not (self.config.OMDB_API_KEY and self.config.OMDB_API_KEY != "yourkey") and \
+           not (self.config.TMDB_API_KEY and self.config.TMDB_API_KEY != "yourkey") and \
+           not (self.config.TVDB_API_KEY and self.config.TVDB_API_KEY != "yourkey"):
             logging.warning("⚠️ No API Key Found! Please add at least one key in the 'Settings' tab.")
     
     def _set_window_icon(self):
@@ -224,24 +220,22 @@ class App(ctk.CTk):
         
     def create_controls(self):
         self.tab_view = ctk.CTkTabview(self.controls_frame); self.tab_view.pack(expand=True, fill="both", padx=5, pady=5)
-        self.create_actions_tab(self.tab_view.add("Actions")); self.create_settings_tab(self.tab_view.add("Settings"))
-        self.create_reorganize_tab(self.tab_view.add("Reorganize")); self.create_mismatch_tab(self.tab_view.add("Review"))
-        self.create_about_tab(self.tab_view.add("About")); self.tab_view.configure(command=self.on_tab_selected); self.tab_view.set("Actions")
+        self.create_actions_tab(self.tab_view.add("Actions"))
+        self.create_reorganize_tab(self.tab_view.add("Reorganize"))
+        self.create_mismatch_tab(self.tab_view.add("Review"))
+        self.create_settings_tab(self.tab_view.add("Settings"))
+        self.create_about_tab(self.tab_view.add("About"))
+        self.tab_view.configure(command=self.on_tab_selected)
+        self.tab_view.set("Actions")
 
     def on_tab_selected(self):
         tab_name = self.tab_view.get()
         if tab_name == "Review": self.scan_mismatched_files()
-        
-        # This logic now correctly applies to all tabs
-        if tab_name == "About":
-            self.log_textbox.grid_remove()
-            self.grid_rowconfigure(0, weight=1); self.grid_rowconfigure(1, weight=0)
-        else:
-            self.grid_rowconfigure(0, weight=0); self.grid_rowconfigure(1, weight=1)
-            if self.log_is_visible:
-                self.log_textbox.grid()
-            else:
-                self.log_textbox.grid_remove()
+        is_about_tab = tab_name == "About"
+        self.grid_rowconfigure(0, weight=1 if is_about_tab else 0)
+        self.grid_rowconfigure(1, weight=0 if is_about_tab else 1)
+        if is_about_tab: self.log_textbox.grid_remove()
+        elif self.log_is_visible: self.log_textbox.grid()
 
     def create_actions_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
@@ -266,23 +260,14 @@ class App(ctk.CTk):
         self.anime_radio = ctk.CTkRadioButton(ff, text="Anime Folder", variable=self.fallback_var, value="anime"); self.anime_radio.pack(side="left", padx=5)
         self.update_fallback_ui_state()
 
-    # --- START: REWRITTEN Reorganize Tab with Preview Feature ---
     def create_reorganize_tab(self, parent):
-        parent.grid_columnconfigure(0, weight=1)
-        parent.grid_rowconfigure(2, weight=1) # File list
-        parent.grid_rowconfigure(4, weight=1) # Preview list
-
-        # --- Top Controls ---
+        parent.grid_columnconfigure(0, weight=1); parent.grid_rowconfigure(2, weight=1); parent.grid_rowconfigure(4, weight=1)
         top_frame = ctk.CTkFrame(parent); top_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew"); top_frame.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(top_frame, text="Target Library:").grid(row=0, column=0, padx=(10, 5), pady=10)
         self.reorganize_path_entry = ctk.CTkEntry(top_frame, placeholder_text="Select a library folder to scan..."); self.reorganize_path_entry.grid(row=0, column=1, padx=5, pady=10, sticky="ew")
         ctk.CTkButton(top_frame, text="Browse...", width=80, command=lambda: self.browse_folder(self.reorganize_path_entry)).grid(row=0, column=2, padx=5, pady=10)
         ctk.CTkButton(top_frame, text="Scan for Files", width=100, command=self.scan_reorganize_folder).grid(row=0, column=3, padx=(5, 10), pady=10)
-
-        # --- File List Frame ---
         self.reorganize_files_frame = ctk.CTkScrollableFrame(parent, label_text="Files Found in Target Library"); self.reorganize_files_frame.grid(row=2, column=0, padx=10, pady=(0,5), sticky="nsew")
-
-        # --- Middle Controls (Pagination & Selection) ---
         check_frame = ctk.CTkFrame(parent, fg_color="transparent"); check_frame.grid(row=1, column=0, padx=10, pady=0, sticky="ew"); check_frame.grid_columnconfigure(1, weight=1)
         ctk.CTkButton(check_frame, text="Select Page", command=self.reorganize_select_page).pack(side="left")
         ctk.CTkButton(check_frame, text="Deselect Page", command=lambda: self.reorganize_select_page(select=False)).pack(side="left", padx=5)
@@ -291,19 +276,13 @@ class App(ctk.CTk):
         self.reorganize_page_label = ctk.CTkLabel(check_frame, text="Page 0 of 0"); self.reorganize_page_label.pack(side="left")
         self.reorganize_next_button = ctk.CTkButton(check_frame, text="Next >", width=60, command=self.reorganize_next_page, state="disabled"); self.reorganize_next_button.pack(side="left", padx=5)
         self.reorganize_status_label = ctk.CTkLabel(check_frame, text="Selected: 0"); self.reorganize_status_label.pack(side="right")
-        
-        # --- Preview Frame ---
         self.reorganize_preview_frame = ctk.CTkScrollableFrame(parent, label_text="Rename Preview"); self.reorganize_preview_frame.grid(row=4, column=0, padx=10, pady=5, sticky="nsew")
-
-        # --- Bottom Action Buttons ---
         bottom_frame = ctk.CTkFrame(parent); bottom_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew"); bottom_frame.grid_columnconfigure((0, 1, 2), weight=1)
         self.reorganize_folders_button = ctk.CTkButton(bottom_frame, text="Organize Selected into Folders", command=self.start_folder_reorganization); self.reorganize_folders_button.grid(row=0, column=0, padx=(0, 5), pady=5, sticky="ew")
         self.rename_preview_button = ctk.CTkButton(bottom_frame, text="Preview Rename for Selected", command=self.start_rename_preview); self.rename_preview_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
         self.apply_rename_button = ctk.CTkButton(bottom_frame, text="Apply Rename", command=self.start_file_renaming, state="disabled"); self.apply_rename_button.grid(row=0, column=2, padx=(5, 0), pady=5, sticky="ew")
-        
         self.quick_clean_var = ctk.BooleanVar(value=False); ctk.CTkCheckBox(bottom_frame, text="Quick Clean (No API)", variable=self.quick_clean_var, command=self.clear_rename_preview).grid(row=1, column=1, padx=10, pady=10, sticky="w")
         self.reorganize_dry_run_var = ctk.BooleanVar(value=False); ctk.CTkCheckBox(bottom_frame, text="Dry Run (for all reorganize actions)", variable=self.reorganize_dry_run_var).grid(row=1, column=0, padx=10, pady=10, sticky="w")
-    # --- END: REWRITTEN Reorganize Tab ---
         
     def create_mismatch_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1); parent.grid_rowconfigure(1, weight=1)
@@ -329,22 +308,46 @@ class App(ctk.CTk):
         
     def create_settings_tab(self, parent):
         parent.grid_columnconfigure(1, weight=1); self.path_entries = {}; row = 0
-        pm = {'SOURCE_DIR': 'Source Directory (for Actions tab)', 'MOVIES_DIR': 'Movies Directory', 'TV_SHOWS_DIR': 'TV Shows Directory', 'ANIME_MOVIES_DIR': 'Anime Movies Directory', 'ANIME_SERIES_DIR': 'Anime Series Directory', 'MISMATCHED_DIR': 'Mismatched Files Directory'}
+        pm = {'SOURCE_DIR': 'Source Directory', 'MOVIES_DIR': 'Movies Directory', 'TV_SHOWS_DIR': 'TV Shows Directory', 'ANIME_MOVIES_DIR': 'Anime Movies Directory', 'ANIME_SERIES_DIR': 'Anime Series Directory', 'MISMATCHED_DIR': 'Mismatched Files Directory'}
         for key, label in pm.items(): row = self._create_path_entry_row(parent, row, key, label)
-        ctk.CTkLabel(parent, text="Split Language Movies Dir").grid(row=row, column=0, padx=5, pady=5, sticky="w"); self.split_movies_dir_entry = ctk.CTkEntry(parent, width=400); self.split_movies_dir_entry.insert(0, getattr(self.config, "SPLIT_MOVIES_DIR", "")); self.path_entries["SPLIT_MOVIES_DIR"] = self.split_movies_dir_entry; ctk.CTkButton(parent, text="Browse...", width=80, command=lambda e=self.split_movies_dir_entry: self.browse_folder(e)).grid(row=row, column=2, padx=5, pady=5); self.split_movies_dir_entry.grid(row=row, column=1, padx=5, pady=5, sticky="ew"); row += 1
+        row = self._create_path_entry_row(parent, row, "SPLIT_MOVIES_DIR", "Split Language Movies Dir")
         ctk.CTkLabel(parent, text="Languages to Split").grid(row=row, column=0, padx=5, pady=5, sticky="w"); self.split_languages_entry = ctk.CTkEntry(parent, placeholder_text='e.g., fr, es, de, all'); self.split_languages_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew");
         if self.config.LANGUAGES_TO_SPLIT: self.split_languages_entry.insert(0, ", ".join(self.config.LANGUAGES_TO_SPLIT)); row += 1
         ctk.CTkLabel(parent, text="Sidecar Extensions").grid(row=row, column=0, padx=5, pady=5, sticky="w"); self.sidecar_entry = ctk.CTkEntry(parent, placeholder_text=".srt, .nfo, .txt"); self.sidecar_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew");
         if self.config.SIDECAR_EXTENSIONS: self.sidecar_entry.insert(0, ", ".join(self.config.SIDECAR_EXTENSIONS)); row += 1
         ctk.CTkLabel(parent, text="Custom Strings to Remove").grid(row=row, column=0, padx=5, pady=5, sticky="w"); self.custom_strings_entry = ctk.CTkEntry(parent, placeholder_text="FRENCH, VOSTFR"); self.custom_strings_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew");
         if self.config.CUSTOM_STRINGS_TO_REMOVE: self.custom_strings_entry.insert(0, ", ".join(self.config.CUSTOM_STRINGS_TO_REMOVE)); row += 1
-        ctk.CTkLabel(parent, text="Primary Provider").grid(row=row, column=0, padx=5, pady=5, sticky="w"); pf = ctk.CTkFrame(parent, fg_color="transparent"); pf.grid(row=row, column=1, columnspan=2, sticky="ew", padx=5, pady=5); ctk.CTkSegmentedButton(pf, values=["OMDb", "TMDB"], variable=self.api_provider_var).pack(side="left"); ctk.CTkLabel(pf, text="If both API keys are entered, the other will be used as a fallback.", text_color="gray50").pack(side="left", padx=(10,0)); row += 1
+        ctk.CTkLabel(parent, text="Primary Provider").grid(row=row, column=0, padx=5, pady=5, sticky="w"); pf = ctk.CTkFrame(parent, fg_color="transparent"); pf.grid(row=row, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
+        ctk.CTkSegmentedButton(pf, values=["OMDb", "TMDB", "TVDB"], variable=self.api_provider_var).pack(side="left")
+        ctk.CTkLabel(pf, text="All configured APIs will be used as fallbacks.", text_color="gray50").pack(side="left", padx=(10,0)); row += 1
         ctk.CTkLabel(parent, text="OMDb API Key").grid(row=row, column=0, padx=5, pady=5, sticky="w"); oaf = ctk.CTkFrame(parent, fg_color="transparent"); oaf.grid(row=row, column=1, columnspan=2, sticky="ew"); oaf.grid_columnconfigure(0, weight=1); self.omdb_api_key_entry = ctk.CTkEntry(oaf, placeholder_text="Enter OMDb API key"); self.omdb_api_key_entry.grid(row=0, column=0, sticky="ew");
         if self.config.OMDB_API_KEY and self.config.OMDB_API_KEY != "yourkey": self.omdb_api_key_entry.insert(0, self.config.OMDB_API_KEY); self.omdb_api_key_entry.configure(show="*");
         self.omdb_api_key_entry.bind("<Key>", lambda e: self.omdb_api_key_entry.configure(show="*")); ctk.CTkButton(oaf, text="Test Key", width=80, command=lambda: self.test_api_key_clicked("omdb")).grid(row=0, column=1, padx=(10,0)); row += 1
         ctk.CTkLabel(parent, text="TMDB API Key").grid(row=row, column=0, padx=5, pady=5, sticky="w"); taf = ctk.CTkFrame(parent, fg_color="transparent"); taf.grid(row=row, column=1, columnspan=2, sticky="ew"); taf.grid_columnconfigure(0, weight=1); self.tmdb_api_key_entry = ctk.CTkEntry(taf, placeholder_text="Enter TMDB API key"); self.tmdb_api_key_entry.grid(row=0, column=0, sticky="ew");
         if self.config.TMDB_API_KEY and self.config.TMDB_API_KEY != "yourkey": self.tmdb_api_key_entry.insert(0, self.config.TMDB_API_KEY); self.tmdb_api_key_entry.configure(show="*");
         self.tmdb_api_key_entry.bind("<Key>", lambda e: self.tmdb_api_key_entry.configure(show="*")); ctk.CTkButton(taf, text="Test Key", width=80, command=lambda: self.test_api_key_clicked("tmdb")).grid(row=0, column=1, padx=(10,0)); row += 1
+        ctk.CTkLabel(parent, text="TVDB API Key").grid(row=row, column=0, padx=5, pady=5, sticky="w"); tvdb_frame = ctk.CTkFrame(parent, fg_color="transparent"); tvdb_frame.grid(row=row, column=1, columnspan=2, sticky="ew"); tvdb_frame.grid_columnconfigure(0, weight=1); self.tvdb_api_key_entry = ctk.CTkEntry(tvdb_frame, placeholder_text="Enter TVDB API key"); self.tvdb_api_key_entry.grid(row=0, column=0, sticky="ew");
+        if self.config.TVDB_API_KEY and self.config.TVDB_API_KEY != "yourkey": self.tvdb_api_key_entry.insert(0, self.config.TVDB_API_KEY); self.tvdb_api_key_entry.configure(show="*");
+        self.tvdb_api_key_entry.bind("<Key>", lambda e: self.tvdb_api_key_entry.configure(show="*")); ctk.CTkButton(tvdb_frame, text="Test Key", width=80, command=lambda: self.test_api_key_clicked("tvdb")).grid(row=0, column=1, padx=(10,0)); row += 1
+        ctk.CTkLabel(parent, text="TVDB PIN (Optional)").grid(row=row, column=0, padx=5, pady=5, sticky="w"); self.tvdb_pin_entry = ctk.CTkEntry(parent, placeholder_text="Enter TVDB PIN if required"); self.tvdb_pin_entry.grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="ew");
+        if self.config.TVDB_PIN: self.tvdb_pin_entry.insert(0, self.config.TVDB_PIN);
+        row += 1
+        
+        app_options_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        app_options_frame.grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="ew")
+        startup_checkbox = ctk.CTkCheckBox(app_options_frame, text="Run at Login (and start Watchdog)", variable=self.start_with_windows_var)
+        startup_checkbox.pack(side="left", padx=(0, 20))
+        notify_checkbox = ctk.CTkCheckBox(app_options_frame, text="Notify on Mismatch", variable=self.notify_on_mismatch_var)
+        notify_checkbox.pack(side="left")
+        if hasattr(sys, "frozen"):
+            if sys.platform == "win32": startup_checkbox.configure(command=self._toggle_startup)
+            elif sys.platform == "linux": startup_checkbox.configure(command=self._toggle_startup)
+            else:
+                startup_checkbox.configure(state="disabled")
+                ctk.CTkLabel(app_options_frame, text="To run at login, go to System Settings > General > Login Items.", text_color="gray50").pack(side="left", padx=10)
+        else: startup_checkbox.configure(state="disabled")
+        row += 1
+
         ctk.CTkButton(parent, text="Save Settings", command=self.save_settings).grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="e")
 
     def create_about_tab(self, parent):
@@ -355,7 +358,7 @@ class App(ctk.CTk):
         ttb = ctk.CTkTextbox(parent, wrap="word", font=("Segoe UI", 14), corner_radius=6); ttb.grid(row=1, column=0, padx=10, pady=(5, 5), sticky="nsew")
         ttb.insert("end", "\n"); ttb.insert("end", "🗡️ Some tools aren't just built—they're forged. 🗡️\n\n"); ttb.insert("end", "Created with ❤️ by: Frederic LM\n\n"); ttb.insert("end", "If SortMeDown has saved you time, consider showing some support!\n\n")
         for i, (text, url) in enumerate([("🍺 Buy Me a beer", "https://coff.ee/drmcwormd")]): lt = f"link-{i}"; ttb.tag_config(lt, foreground="#6495ED", underline=True); ttb.tag_bind(lt, "<Button-1>", lambda e, u=url: open_url(u)); ttb.tag_bind(lt, "<Enter>", lambda e: ttb.configure(cursor="hand2")); ttb.tag_bind(lt, "<Leave>", lambda e: ttb.configure(cursor="")); ttb.insert("end", text, (lt, "center"))
-        ttb.insert("end", "\n\nHappy sorting! 📁"); eut = "link-ee"; ttb.tag_config(eut, foreground="#6495ED", underline=True); ttb.tag_bind(eut, "<Button-1>", lambda e, u="https://youtu.be/HPCdBJMkN5A?si=UxQbUUR7x6T-EWSL": open_url(u)); ttb.tag_bind(eut, "<Enter>", lambda e: ttb.configure(cursor="hand2")); ttb.tag_bind(eut, "<Leave>", lambda e: ttb.configure(cursor="")); ttb.insert("end", "🎯", eut)
+        ttb.insert("end", "\n\nHappy sorting! 📂"); eut = "link-ee"; ttb.tag_config(eut, foreground="#6495ED", underline=True); ttb.tag_bind(eut, "<Button-1>", lambda e, u="https://youtu.be/HPCdBJMkN5A?si=UxQbUUR7x6T-EWSL": open_url(u)); ttb.tag_bind(eut, "<Enter>", lambda e: ttb.configure(cursor="hand2")); ttb.tag_bind(eut, "<Leave>", lambda e: ttb.configure(cursor="")); ttb.insert("end", "🎯", eut)
         ttb.tag_config("center", justify="center"); ttb.tag_add("center", "1.0", "end"); ttb.configure(state="disabled")
         hf = ctk.CTkFrame(parent); hf.grid(row=2, column=0, padx=10, pady=(5, 10), sticky="nsew"); hf.grid_columnconfigure(0, weight=1); hf.grid_rowconfigure(1, weight=1)
         ctk.CTkLabel(hf, text="Version History", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=10, pady=(5, 2), sticky="w")
@@ -368,46 +371,80 @@ class App(ctk.CTk):
         if state == "normal": self.update_fallback_ui_state()
 
     def _update_mismatch_panel_state(self):
-        isfs = self.selected_mismatched_file is not None; s = "normal" if isfs else "disabled"
-        self.mismatch_name_entry.configure(state=s); self.mismatch_reprocess_button.configure(state=s); self.mismatch_delete_button.configure(state=s)
-        self.force_movie_btn.configure(state=s); self.force_tv_btn.configure(state=s); self.force_anime_series_btn.configure(state=s); self.force_anime_movie_btn.configure(state=s)
-        sdp = self.path_entries.get('SPLIT_MOVIES_DIR', ctk.CTkEntry(self)).get(); ss = s if sdp else "disabled"; self.force_split_lang_movie_btn.configure(state=ss)
-        if not isfs: self.mismatch_selected_label.configure(text="No file selected."); self.mismatch_name_entry.delete(0, ctk.END)
-        else: self.mismatch_selected_label.configure(text=f"Selected: {self.selected_mismatched_file.name}")
+        is_file_selected = self.selected_mismatched_file is not None
+        state = "normal" if is_file_selected else "disabled"
+        self.mismatch_name_entry.configure(state=state)
+        self.mismatch_reprocess_button.configure(state=state)
+        self.mismatch_delete_button.configure(state=state)
+        self.force_movie_btn.configure(state=state)
+        self.force_tv_btn.configure(state=state)
+        self.force_anime_series_btn.configure(state=state)
+        self.force_anime_movie_btn.configure(state=state)
+        split_dir_present = self.path_entries.get('SPLIT_MOVIES_DIR', ctk.CTkEntry(self)).get()
+        split_btn_state = state if split_dir_present else "disabled"
+        self.force_split_lang_movie_btn.configure(state=split_btn_state)
+        if not is_file_selected:
+            self.mismatch_selected_label.configure(text="No file selected.")
+            self.mismatch_name_entry.delete(0, ctk.END)
+        else:
+            self.mismatch_selected_label.configure(text=f"Selected: {self.selected_mismatched_file.name}")
 
-    def scan_mismatched_files(self):
+    def scan_mismatched_files(self, index_to_select: int = 0):
         for w in self.mismatched_files_frame.winfo_children(): w.destroy()
         self.mismatch_buttons = {}; self.selected_mismatched_file = None; self._update_mismatch_panel_state()
         md = self.config.get_path('MISMATCHED_DIR') or (self.config.get_path('SOURCE_DIR') / '_Mismatched' if self.config.get_path('SOURCE_DIR') else None)
-        if not md or not md.exists(): ctk.CTkLabel(self.mismatched_files_frame, text="Mismatched directory not configured or found.").pack(); return
+        if not md or not md.exists():
+            ctk.CTkLabel(self.mismatched_files_frame, text="Mismatched directory not found.").pack()
+            return
         mfs = [p for ext in self.config.SUPPORTED_EXTENSIONS for p in md.glob(f'**/*{ext}') if p.is_file()]
-        if not mfs: ctk.CTkLabel(self.mismatched_files_frame, text="No media files found.").pack(); return
+        if not mfs:
+            ctk.CTkLabel(self.mismatched_files_frame, text="No media files found.").pack()
+            return
         smfs = sorted(mfs, key=lambda p: p.name)
-        for fp in smfs: btn = ctk.CTkButton(self.mismatched_files_frame, text=fp.name, command=lambda f=fp: self.select_mismatched_file(f), fg_color="transparent", anchor="w"); btn.pack(fill="x", padx=2, pady=2); self.mismatch_buttons[fp] = btn
-        if smfs: self.after(50, lambda: self.select_mismatched_file(smfs[0]))
+        for fp in smfs:
+            btn = ctk.CTkButton(self.mismatched_files_frame, text=fp.name, command=lambda f=fp: self.select_mismatched_file(f), fg_color="transparent", anchor="w")
+            btn.pack(fill="x", padx=2, pady=2)
+            self.mismatch_buttons[fp] = btn
+        if smfs:
+            new_index = max(0, min(index_to_select, len(smfs) - 1))
+            self.after(50, lambda: self.select_mismatched_file(smfs[new_index]))
 
     def select_mismatched_file(self, file_path: Path):
         self.selected_mismatched_file = file_path
-        for p, b in self.mismatch_buttons.items(): b.configure(fg_color=self.default_button_color if p == file_path else "transparent")
-        self.update_config_from_ui(); fs = self.selected_mismatched_file.stem; ct = backend.TitleCleaner.clean_for_search(fs, self.config.CUSTOM_STRINGS_TO_REMOVE); y = backend.TitleCleaner.extract_year(fs)
-        sn = f"{ct} ({y})" if y else ct; self.mismatch_name_entry.delete(0, ctk.END); self.mismatch_name_entry.insert(0, sn); self._update_mismatch_panel_state()
-    
-    def reprocess_selected_file(self):
+        for p, b in self.mismatch_buttons.items():
+            b.configure(fg_color=self.default_button_color if p == file_path else "transparent")
+        self.update_config_from_ui()
+        stem = self.selected_mismatched_file.stem
+        clean_title = backend.TitleCleaner.clean_for_search(stem, self.config.CUSTOM_STRINGS_TO_REMOVE)
+        year = backend.TitleCleaner.extract_year(stem)
+        suggested_name = f"{clean_title} ({year})" if year else clean_title
+        self.mismatch_name_entry.delete(0, ctk.END)
+        self.mismatch_name_entry.insert(0, suggested_name)
+        self._update_mismatch_panel_state()
+
+    def _get_mismatch_index_and_start_task(self, task_lambda):
         if not self.selected_mismatched_file: return
-        nn = self.mismatch_name_entry.get().strip();
-        if not nn: messagebox.showwarning("Input Required", "Please enter a corrected name for the file."); return
-        threading.Thread(target=lambda: (backend.MediaSorter(self.config, self.dry_run_var.get()).sort_item(self.selected_mismatched_file, override_name=nn), self.after(0, self.scan_mismatched_files)), daemon=True).start()
+        try: current_index = list(self.mismatch_buttons.keys()).index(self.selected_mismatched_file)
+        except (ValueError, AttributeError): current_index = 0
+        threading.Thread(target=task_lambda, args=(current_index,), daemon=True).start()
+
+    def reprocess_selected_file(self):
+        new_name = self.mismatch_name_entry.get().strip()
+        if not new_name: messagebox.showwarning("Input Required", "Please enter a corrected name."); return
+        task = lambda index: (backend.MediaSorter(self.config, self.dry_run_var.get()).sort_item(self.selected_mismatched_file, override_name=new_name), self.after(0, self.scan_mismatched_files, index))
+        self._get_mismatch_index_and_start_task(task)
 
     def force_reprocess_file(self, media_type: backend.MediaType, is_split_lang_override: bool = False):
-        if not self.selected_mismatched_file: return
-        fn = self.mismatch_name_entry.get().strip();
-        if not fn: messagebox.showwarning("Input Required", "Please enter a name for the folder."); return
-        threading.Thread(target=lambda: (backend.MediaSorter(self.config, self.dry_run_var.get()).force_move_item(self.selected_mismatched_file, fn, media_type, is_split_lang_override), self.after(0, self.scan_mismatched_files)), daemon=True).start()
+        folder_name = self.mismatch_name_entry.get().strip()
+        if not folder_name: messagebox.showwarning("Input Required", "Please enter a name for the folder."); return
+        task = lambda index: (backend.MediaSorter(self.config, self.dry_run_var.get()).force_move_item(self.selected_mismatched_file, folder_name, media_type, is_split_lang_override), self.after(0, self.scan_mismatched_files, index))
+        self._get_mismatch_index_and_start_task(task)
 
     def delete_selected_file(self):
         if not self.selected_mismatched_file: return
-        if not messagebox.askyesno("Confirm Deletion", f"Are you sure you want to permanently delete '{self.selected_mismatched_file.name}' and its sidecar files?"): return
-        threading.Thread(target=lambda: (backend.FileManager(self.config, self.dry_run_var.get()).delete_file_group(self.selected_mismatched_file), self.after(0, self.scan_mismatched_files)), daemon=True).start()
+        if not messagebox.askyesno("Confirm Deletion", f"Permanently delete '{self.selected_mismatched_file.name}' and its sidecar files?"): return
+        task = lambda index: (backend.FileManager(self.config, self.dry_run_var.get()).delete_file_group(self.selected_mismatched_file), self.after(0, self.scan_mismatched_files, index))
+        self._get_mismatch_index_and_start_task(task)
 
     def toggle_log_visibility(self):
         self.log_is_visible = not self.log_is_visible
@@ -418,10 +455,12 @@ class App(ctk.CTk):
 
     def on_media_type_toggled(self): self.update_fallback_ui_state()
     def update_fallback_ui_state(self):
-        tv_on, an_on = self.enabled_vars['TV_SHOWS_ENABLED'].get(), self.enabled_vars['ANIME_SERIES_ENABLED'].get()
-        self.tv_radio.configure(state="normal" if tv_on else "disabled"); self.anime_radio.configure(state="normal" if an_on else "disabled")
+        tv_on = self.enabled_vars['TV_SHOWS_ENABLED'].get()
+        anime_on = self.enabled_vars['ANIME_SERIES_ENABLED'].get()
+        self.tv_radio.configure(state="normal" if tv_on else "disabled")
+        self.anime_radio.configure(state="normal" if anime_on else "disabled")
         if not tv_on and self.fallback_var.get() == "tv": self.fallback_var.set("mismatched")
-        if not an_on and self.fallback_var.get() == "anime": self.fallback_var.set("mismatched")
+        if not anime_on and self.fallback_var.get() == "anime": self.fallback_var.set("mismatched")
         
     def stop_running_task(self):
         if self.sorter_instance: logging.warning("🛑 User initiated stop..."); self.sorter_instance.signal_stop()
@@ -431,10 +470,17 @@ class App(ctk.CTk):
         e.insert(0, getattr(self.config, key, "")); self.path_entries[key] = e; ctk.CTkButton(parent, text="Browse...", width=80, command=lambda e=e: self.browse_folder(e)).grid(row=row, column=2, padx=5, pady=5)
         return row + 1
 
-    def _test_api_key_task(self, p: str):
-        key = self.omdb_api_key_entry.get() if p == "omdb" else self.tmdb_api_key_entry.get(); tf = getattr(backend.APIClient(self.config), f"test_{p}_api_key"); v, m = tf(key); messagebox.showinfo(f"{p.upper()} Test", m)
+    def _test_api_key_task(self, provider: str):
+        if provider == "tvdb":
+            key, pin = self.tvdb_api_key_entry.get(), self.tvdb_pin_entry.get()
+            valid, message = self.api_client.test_tvdb_api_key(key, pin)
+        elif provider == "omdb": valid, message = self.api_client.test_omdb_api_key(self.omdb_api_key_entry.get())
+        elif provider == "tmdb": valid, message = self.api_client.test_tmdb_api_key(self.tmdb_api_key_entry.get())
+        else: valid, message = False, "Unknown provider"
+        messagebox.showinfo(f"{provider.upper()} Test", message)
 
-    def test_api_key_clicked(self, p: str): threading.Thread(target=self._test_api_key_task, args=(p,), daemon=True).start()
+    def test_api_key_clicked(self, provider: str): 
+        threading.Thread(target=self._test_api_key_task, args=(provider,), daemon=True).start()
             
     def browse_folder(self, e):
         if fp := filedialog.askdirectory(initialdir=e.get() or str(Path.home())): e.delete(0, ctk.END); e.insert(0, fp)
@@ -446,9 +492,12 @@ class App(ctk.CTk):
     def update_config_from_ui(self):
         for k, e in self.path_entries.items(): setattr(self.config, k, e.get())
         for k, v in self.enabled_vars.items(): setattr(self.config, k, v.get())
-        self.config.API_PROVIDER = self.api_provider_var.get().lower()
-        if key := self.omdb_api_key_entry.get(): self.config.OMDB_API_KEY = key
-        if key := self.tmdb_api_key_entry.get(): self.config.TMDB_API_KEY = key
+        self.config.API_PROVIDER = {"OMDb": "omdb", "TMDB": "tmdb", "TVDB": "tvdb"}.get(self.api_provider_var.get(), "omdb")
+        self.config.OMDB_API_KEY = self.omdb_api_key_entry.get()
+        self.config.TMDB_API_KEY = self.tmdb_api_key_entry.get()
+        self.config.TVDB_API_KEY = self.tvdb_api_key_entry.get()
+        self.config.TVDB_PIN = self.tvdb_pin_entry.get()
+        self.config.NOTIFY_ON_MISMATCH = self.notify_on_mismatch_var.get()
         self.config.LANGUAGES_TO_SPLIT = [l.strip().lower() for l in self.split_languages_entry.get().split(',') if l.strip()]
         self.config.SIDECAR_EXTENSIONS = {f".{e.strip().lstrip('.')}" for e in self.sidecar_entry.get().split(',') if e.strip()}
         self.config.CUSTOM_STRINGS_TO_REMOVE = {s.strip().upper() for s in self.custom_strings_entry.get().split(',') if s.strip()}
@@ -492,14 +541,12 @@ class App(ctk.CTk):
         if not selected_files: messagebox.showwarning("No Files Selected", "Please select files to reorganize."); return
         self._start_reorganize_task(lambda s, p, f: s.reorganize_folder_structure(p, file_list=f), "reorganize", (target_path, selected_files))
 
-    # --- START: NEW/MODIFIED RENAME METHODS for Preview Workflow ---
     def start_rename_preview(self):
         selected_files = self._get_selected_reorganize_files()
         if not selected_files: messagebox.showwarning("No Files Selected", "Please select files to preview for renaming."); return
-        
         self.clear_rename_preview()
-        task_function = lambda s, files, quick_clean: self.run_preview_in_thread(s, files, quick_clean)
-        self._start_reorganize_task(task_function, "rename-preview", (selected_files, self.quick_clean_var.get()))
+        task = lambda s, files, qc: self.run_preview_in_thread(s, files, qc)
+        self._start_reorganize_task(task, "rename-preview", (selected_files, self.quick_clean_var.get()))
 
     def run_preview_in_thread(self, sorter_instance, files_to_preview, quick_clean):
         target_path = Path(self.reorganize_path_entry.get())
@@ -509,26 +556,20 @@ class App(ctk.CTk):
     def display_rename_preview(self, rename_plan: Dict[Path, Path]):
         for widget in self.reorganize_preview_frame.winfo_children(): widget.destroy()
         self.rename_preview_cache = rename_plan
-
         if not rename_plan:
             ctk.CTkLabel(self.reorganize_preview_frame, text="Preview complete. No files need renaming.").pack(pady=5)
             self.apply_rename_button.configure(state="disabled")
             return
-
         for old_path, new_path in rename_plan.items():
-            row_frame = ctk.CTkFrame(self.reorganize_preview_frame, fg_color="transparent")
-            row_frame.pack(fill="x", expand=True)
-            row_frame.grid_columnconfigure(0, weight=1)
-            row_frame.grid_columnconfigure(2, weight=1)
+            row_frame = ctk.CTkFrame(self.reorganize_preview_frame, fg_color="transparent"); row_frame.pack(fill="x", expand=True)
+            row_frame.grid_columnconfigure(0, weight=1); row_frame.grid_columnconfigure(2, weight=1)
             ctk.CTkLabel(row_frame, text=old_path.name, text_color="gray60", anchor="w").grid(row=0, column=0, sticky="ew", padx=5)
             ctk.CTkLabel(row_frame, text="->", text_color="gray80").grid(row=0, column=1, padx=10)
             ctk.CTkLabel(row_frame, text=new_path.name, text_color="#4CAF50", anchor="w").grid(row=0, column=2, sticky="ew", padx=5)
-        
         self.apply_rename_button.configure(state="normal")
-        messagebox.showinfo("Preview Ready", f"Preview generated for {len(rename_plan)} files. Review the changes below and click 'Apply Rename' to proceed.")
+        messagebox.showinfo("Preview Ready", f"Preview generated for {len(rename_plan)} files. Review and click 'Apply Rename'.")
 
     def clear_rename_preview(self):
-        """Called when selections change or quick clean is toggled."""
         for widget in self.reorganize_preview_frame.winfo_children(): widget.destroy()
         self.rename_preview_cache = {}
         self.apply_rename_button.configure(state="disabled")
@@ -537,80 +578,58 @@ class App(ctk.CTk):
         if not self.rename_preview_cache:
             messagebox.showerror("Error", "No rename plan found. Please generate a preview first.")
             return
-        if not messagebox.askyesno("Confirm Rename", f"Are you sure you want to rename {len(self.rename_preview_cache)} file(s)? This action cannot be undone."):
+        if not messagebox.askyesno("Confirm Rename", f"Rename {len(self.rename_preview_cache)} file(s)? This cannot be undone."):
             return
-
         self._start_reorganize_task(lambda s, plan: s.rename_files_in_library(plan), "rename", (self.rename_preview_cache,))
         self.clear_rename_preview()
-    # --- END: NEW/MODIFIED RENAME METHODS ---
 
     def scan_reorganize_folder(self):
         target_path_str = self.reorganize_path_entry.get().strip()
-        if not target_path_str: messagebox.showerror("Error", "Please select a target library folder to scan."); return
-        target_path = Path(target_path_str)
-        if not target_path.is_dir(): messagebox.showerror("Error", f"Path is not a valid folder:\n{target_path}"); return
-        
+        if not target_path_str or not Path(target_path_str).is_dir():
+            messagebox.showerror("Error", "Please select a valid target library folder.")
+            return
         for widget in self.reorganize_files_frame.winfo_children(): widget.destroy()
-        self.clear_rename_preview() 
-        
+        self.clear_rename_preview()
         self.reorganize_all_files = []; self.reorganize_selection_state = {}; self.reorganize_current_page = 0
-        self.reorganize_prev_button.configure(state="disabled"); self.reorganize_next_button.configure(state="disabled")
-        logging.info(f"Scanning '{target_path}' for media files...")
         self.reorganize_page_label.configure(text="Scanning...")
         def _scan():
-            files = sorted([p for ext in self.config.SUPPORTED_EXTENSIONS for p in target_path.glob(f'**/*{ext}') if p.is_file()], key=lambda p: str(p))
-            self.after(0, self.finish_reorganize_scan, files, target_path)
+            files = sorted([p for ext in self.config.SUPPORTED_EXTENSIONS for p in Path(target_path_str).glob(f'**/*{ext}') if p.is_file()], key=str)
+            self.after(0, self.finish_reorganize_scan, files, Path(target_path_str))
         threading.Thread(target=_scan, daemon=True).start()
 
     def finish_reorganize_scan(self, media_files: List[Path], base_path: Path):
         self.reorganize_all_files = media_files
         self.reorganize_selection_state = {path: False for path in media_files}
-        if not media_files:
-            logging.warning("Scan complete. No media files found.")
-            self.reorganize_display_page()
-            return
-        logging.info(f"Scan complete. Found {len(media_files)} media files.")
+        if not media_files: logging.warning("Scan complete. No media files found.")
+        else: logging.info(f"Scan complete. Found {len(media_files)} media files.")
         self.reorganize_display_page()
 
     def reorganize_display_page(self):
         for widget in self.reorganize_files_frame.winfo_children(): widget.destroy()
         if not self.reorganize_all_files: ctk.CTkLabel(self.reorganize_files_frame, text="No media files found.").pack(); self.reorganize_page_label.configure(text="Page 0 of 0"); return
-        
-        start_index = self.reorganize_current_page * self.reorganize_items_per_page
-        end_index = start_index + self.reorganize_items_per_page
-        page_files = self.reorganize_all_files[start_index:end_index]
+        start = self.reorganize_current_page * self.reorganize_items_per_page
+        end = start + self.reorganize_items_per_page
+        page_files = self.reorganize_all_files[start:end]
         base_path = Path(self.reorganize_path_entry.get())
-
         for file_path in page_files:
             var = ctk.BooleanVar(value=self.reorganize_selection_state.get(file_path, False))
-            cb = ctk.CTkCheckBox(self.reorganize_files_frame, text=str(file_path.relative_to(base_path)), variable=var,
-                                 command=lambda path=file_path, v=var: self.reorganize_toggle_selection(path, v))
+            cb = ctk.CTkCheckBox(self.reorganize_files_frame, text=str(file_path.relative_to(base_path)), variable=var, command=lambda path=file_path, v=var: self.reorganize_toggle_selection(path, v))
             cb.pack(anchor="w", padx=5)
         self.update_reorganize_ui()
 
     def reorganize_toggle_selection(self, path: Path, var: ctk.BooleanVar):
-        self.reorganize_selection_state[path] = var.get()
-        self.update_reorganize_ui()
-        self.clear_rename_preview() # Clear preview if selection changes
-
+        self.reorganize_selection_state[path] = var.get(); self.update_reorganize_ui(); self.clear_rename_preview()
     def reorganize_select_page(self, select=True):
-        start_index = self.reorganize_current_page * self.reorganize_items_per_page
-        end_index = start_index + self.reorganize_items_per_page
-        for i in range(start_index, min(end_index, len(self.reorganize_all_files))):
-            self.reorganize_selection_state[self.reorganize_all_files[i]] = select
-        self.reorganize_display_page()
-        self.clear_rename_preview() # Clear preview if selection changes
-
+        start = self.reorganize_current_page * self.reorganize_items_per_page; end = start + self.reorganize_items_per_page
+        for i in range(start, min(end, len(self.reorganize_all_files))): self.reorganize_selection_state[self.reorganize_all_files[i]] = select
+        self.reorganize_display_page(); self.clear_rename_preview()
     def reorganize_select_all(self):
         for path in self.reorganize_all_files: self.reorganize_selection_state[path] = True
-        self.reorganize_display_page()
-        self.clear_rename_preview() # Clear preview if selection changes
-
+        self.reorganize_display_page(); self.clear_rename_preview()
     def reorganize_previous_page(self):
         if self.reorganize_current_page > 0: self.reorganize_current_page -= 1; self.reorganize_display_page()
     def reorganize_next_page(self):
-        if (self.reorganize_current_page + 1) * self.reorganize_items_per_page < len(self.reorganize_all_files):
-            self.reorganize_current_page += 1; self.reorganize_display_page()
+        if (self.reorganize_current_page + 1) * self.reorganize_items_per_page < len(self.reorganize_all_files): self.reorganize_current_page += 1; self.reorganize_display_page()
 
     def update_reorganize_ui(self):
         total_files = len(self.reorganize_all_files)
@@ -627,23 +646,19 @@ class App(ctk.CTk):
         is_running = self.sorter_thread and self.sorter_thread.is_alive()
         if is_running:
             self._set_options_state("disabled")
-            self.sort_now_button.configure(state="disabled")
-            self.reorganize_folders_button.configure(state="disabled")
-            self.rename_preview_button.configure(state="disabled")
-            self.apply_rename_button.configure(state="disabled")
+            self.sort_now_button.configure(state="disabled"); self.reorganize_folders_button.configure(state="disabled")
+            self.rename_preview_button.configure(state="disabled"); self.apply_rename_button.configure(state="disabled")
             self.watch_button.configure(text="Stop Watchdog" if self.is_watching else "Running...", state="normal" if self.is_watching else "disabled")
             if self.sorter_instance and self.sorter_instance.is_processing: self.stop_button.configure(state="normal", text="STOP", fg_color="#D32F2F", hover_color="#B71C1C");
             elif self.is_watching: self.stop_button.configure(state="disabled", text="IDLE", fg_color="#FBC02D", text_color="black");
-            if not self.progress_frame.winfo_viewable() and self.sorter_instance.is_processing : self.progress_frame.grid()
+            if not self.progress_frame.winfo_viewable() and self.sorter_instance and self.sorter_instance.is_processing: self.progress_frame.grid()
             self.after(500, self.monitor_active_task)
         else:
-            self._set_options_state("normal")
-            self.reorganize_folders_button.configure(state="normal")
+            self._set_options_state("normal"); self.sort_now_button.configure(state="normal"); self.reorganize_folders_button.configure(state="normal")
             self.rename_preview_button.configure(state="normal")
-            # Apply button state is managed by the preview logic, so we don't touch it here
             if self.is_watching: logging.info("✅ Watchdog stopped.")
             else: logging.info("✅ Task finished.")
-            self.sort_now_button.configure(state="normal"); self.watch_button.configure(text="Launch Watchdog", state="normal")
+            self.watch_button.configure(text="Launch Watchdog", state="normal")
             self.stop_button.configure(state="disabled", text="", fg_color="gray25")
             self.progress_frame.grid_remove(); self.sorter_instance = None; self.sorter_thread = None; self.is_watching = False
             if self.tray_icon: self.tray_icon.update_menu()
@@ -658,7 +673,7 @@ class App(ctk.CTk):
         if self.tray_icon: self.tray_icon.stop()
         if self.sorter_instance: self.sorter_instance.signal_stop()
         if self.sorter_thread and self.sorter_thread.is_alive(): self.sorter_thread.join(2)
-        if self.tray_thread and self.tray_thread.is_alive() and threading.current_thread() != self.tray_thread: self.tray_thread.join(1.0)
+        if self.tray_thread and self.tray_thread.is_alive(): self.tray_thread.join(1.0)
         self.after(0, self._perform_safe_shutdown)
         
     def _perform_safe_shutdown(self): self.save_settings(); self.destroy()
@@ -669,9 +684,59 @@ class App(ctk.CTk):
     def show_review(self): self._show_and_focus_tab("Review")
     def show_about(self): self._show_and_focus_tab("About")
     def hide_to_tray(self): self.withdraw(); self.tray_icon.notify('App is running in the background', 'SortMeDown')
-    def on_minimize(self, event):
+    def on_minimize(self, event=None):
         if self.state() == 'iconic': self.hide_to_tray()
     def set_interval(self, minutes: int): self.watch_interval_entry.delete(0, ctk.END); self.watch_interval_entry.insert(0, str(minutes)); self.save_settings() 
+
+    def _check_startup_status(self):
+        if not hasattr(sys, "frozen"): return
+        is_configured = False
+        if sys.platform == "win32":
+            startup_folder = Path(os.getenv('APPDATA')) / 'Microsoft' / 'Windows' / 'Start Menu' / 'Programs' / 'Startup'
+            shortcut_path = startup_folder / f"{APP_NAME}.lnk"
+            is_configured = shortcut_path.exists()
+        elif sys.platform == "linux":
+            autostart_path = Path.home() / ".config" / "autostart" / f"{APP_NAME}.desktop"
+            is_configured = autostart_path.exists()
+        self.start_with_windows_var.set(is_configured)
+
+    def _toggle_startup(self):
+        if not hasattr(sys, "frozen"): return
+        app_path = sys.executable
+        app_name = "SortMeDown"
+        is_enabled = self.start_with_windows_var.get()
+        try:
+            if sys.platform == "win32":
+                script_path = resource_path('create_shortcut.ps1')
+                if not os.path.exists(script_path): return
+                action = "Create" if is_enabled else "Delete"
+                command = ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(script_path), "-Action", action, "-ShortcutName", app_name, "-AppPath", app_path, "-AppArgs", "--autostart"]
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                subprocess.run(command, check=True)
+            elif sys.platform == "linux":
+                autostart_dir = Path.home() / ".config" / "autostart"
+                desktop_file = autostart_dir / f"{APP_NAME}.desktop"
+                if is_enabled:
+                    autostart_dir.mkdir(parents=True, exist_ok=True)
+                    desktop_entry = f"""[Desktop Entry]
+Type=Application
+Exec="{app_path}" --autostart
+X-GNOME-Autostart-enabled=true
+NoDisplay=false
+Hidden=false
+Name[en_US]={app_name}
+Comment[en_US]=Start the SortMeDown media sorter
+Icon={resource_path('icon.png')}
+X-GNOME-Autostart-Delay=0
+"""
+                    with open(desktop_file, 'w', encoding='utf-8') as f: f.write(desktop_entry)
+                else:
+                    if desktop_file.exists(): os.remove(desktop_file)
+            log_message = "Added to" if is_enabled else "Removed from"
+            logging.info(f"✅ {log_message} system startup.")
+        except Exception as e:
+            logging.error(f"Failed to manage startup configuration: {e}")
         
     def setup_tray_icon(self):
         image = self.create_tray_image()
@@ -687,5 +752,8 @@ class App(ctk.CTk):
         self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True); self.tray_thread.start()
 
 if __name__ == "__main__":
-    app = App()
+    autostart = "--autostart" in sys.argv
+    app = App(start_hidden=autostart)
+    if autostart:
+        app.after(1000, app.toggle_watch_mode)
     app.mainloop()
