@@ -4,6 +4,9 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
+v6.6.2
+- Startup bug fix
+
 v6.6.1
 - Release with new bangbang
 
@@ -718,21 +721,39 @@ class App(ctk.CTk):
 
     def _toggle_startup(self):
         if not hasattr(sys, "frozen"): return
+        
+        # Determine the correct path for the application executable and its directory
         app_path = sys.executable
+        app_dir = str(Path(app_path).parent)
         app_name = "SortMeDown"
         is_enabled = self.start_with_windows_var.get()
+
         try:
             if sys.platform == "win32":
                 script_path = resource_path('create_shortcut.ps1')
-                if not os.path.exists(script_path): return
+                if not script_path.exists():
+                    logging.error("create_shortcut.ps1 not found!")
+                    return
+
                 action = "Create" if is_enabled else "Delete"
-                command = ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(script_path), "-Action", action, "-ShortcutName", app_name, "-AppPath", app_path, "-AppArgs", "--autostart"]
+                
+                
+                command = [
+                    "powershell", "-ExecutionPolicy", "Bypass", "-File", str(script_path),
+                    "-Action", action,
+                    "-ShortcutName", app_name,
+                    "-AppPath", app_path,
+                    "-AppArgs", "--autostart",
+                    "-AppDir", app_dir  
+                ]
+
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 subprocess.run(command, check=True)
+
             elif sys.platform == "linux":
                 autostart_dir = Path.home() / ".config" / "autostart"
-                desktop_file = autostart_dir / f"{APP_NAME}.desktop"
+                desktop_file = autostart_dir / f"{app_name}.desktop"
                 if is_enabled:
                     autostart_dir.mkdir(parents=True, exist_ok=True)
                     desktop_entry = f"""[Desktop Entry]
@@ -744,11 +765,13 @@ Hidden=false
 Name[en_US]={app_name}
 Comment[en_US]=Start the SortMeDown media sorter
 Icon={resource_path('icon.png')}
+Path={app_dir}
 X-GNOME-Autostart-Delay=0
-"""
+"""                 
                     with open(desktop_file, 'w', encoding='utf-8') as f: f.write(desktop_entry)
                 else:
                     if desktop_file.exists(): os.remove(desktop_file)
+            
             log_message = "Added to" if is_enabled else "Removed from"
             logging.info(f"✅ {log_message} system startup.")
         except Exception as e:
