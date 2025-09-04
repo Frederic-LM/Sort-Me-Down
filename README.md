@@ -28,7 +28,7 @@
 
 ## 🌟 Overview
 
-SortMeDown automatically organizes your movies, TV shows, and anime into a clean, structured library. It fetches metadata from OMDb and AniList to correctly identify and rename your files, then moves them to your specified library directories with intelligent conflict resolution.
+SortMeDown automatically organizes your movies, TV shows, and anime into a clean, structured library. It fetches metadata from OMDb , AniList, TMDB or TVDB to correctly identify and rename your files, then moves them to your specified library directories with intelligent conflict resolution.
 
 ## ✨ Key Features
 
