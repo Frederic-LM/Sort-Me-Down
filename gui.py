@@ -4,7 +4,11 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
+v6.6.1
+- Release with new bangbang
+
 v6.6.0
+- Release
 - FEATURE: Lightweight, cross-platform notifications and startup logic.
 - FIXED: Crashing bug in startup logic due to incorrect pyshortcuts call.
 - FIXED: Tab order and restored original About tab.
@@ -668,13 +672,25 @@ class App(ctk.CTk):
         except: img = Image.new('RGB', (64, 64), "#1F6AA5"); dc = ImageDraw.Draw(img); dc.rectangle(((32, 0), (64, 32)), fill="#144870"); dc.rectangle(((0, 32), (32, 64)), fill="#144870"); return img
 
     def quit_app(self):
-        if self.is_quitting: return
-        self.is_quitting = True; logging.info("Shutting down...")
-        if self.tray_icon: self.tray_icon.stop()
-        if self.sorter_instance: self.sorter_instance.signal_stop()
-        if self.sorter_thread and self.sorter_thread.is_alive(): self.sorter_thread.join(2)
-        if self.tray_thread and self.tray_thread.is_alive(): self.tray_thread.join(1.0)
-        self.after(0, self._perform_safe_shutdown)
+        if self.is_quitting:
+            return
+        self.is_quitting = True
+        logging.info("Shutting down...")
+
+        if self.sorter_instance:
+            self.sorter_instance.signal_stop()
+
+
+        if self.tray_icon:
+            self.tray_icon.stop()
+
+        self.save_settings()
+        self.destroy()
+
+    def _perform_safe_shutdown(self):
+
+        self.save_settings()
+        self.destroy()
         
     def _perform_safe_shutdown(self): self.save_settings(); self.destroy()
     def _show_and_focus_tab(self, tab_name: str): self.deiconify(); self.lift(); self.attributes('-topmost', True); self.tab_view.set(tab_name); self.after(100, lambda: self.attributes('-topmost', False))
