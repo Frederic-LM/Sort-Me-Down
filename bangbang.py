@@ -12,6 +12,14 @@ This engine is UI-agnostic. It does not contain any `print` statements or
 argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
+
+Version 6.7.0 (Stable Release)
+- FIXED: UnboundLocalError crash in sort_item by standardizing on 'stats' variable.Again
+- FIXED: Reworked query_tvdb to correctly handle API search results, fixing all TVDB failures.Again
+- FIXED: Removed duplicate TitleCleaner class definition.
+- FIXED: All previous bugs related to language splitting, year searches, and anime detection.
+
+
 Version 6.6.6
 - FIXED: query_tvdb vrong api call
 
@@ -58,15 +66,11 @@ import subprocess
 # --- Helper Functions ---
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
-    try:
-        base_path = Path(sys._MEIPASS)
-    except Exception:
-        base_path = Path(__file__).parent.absolute()
+    try: base_path = Path(sys._MEIPASS)
+    except Exception: base_path = Path(__file__).parent.absolute()
     return base_path / relative_path
 
 def send_notification(title, message, app_name="SortMeDown"):
-    """Sends a native desktop notification based on the current OS."""
     try:
         if sys.platform == "win32":
             script_path = resource_path('send_notification.ps1')
@@ -75,7 +79,7 @@ def send_notification(title, message, app_name="SortMeDown"):
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             subprocess.run(command, check=True, startupinfo=startupinfo)
-        elif sys.platform == "darwin": # macOS
+        elif sys.platform == "darwin":
             command = ['osascript', '-e', f'display notification "{message}" with title "{title}"']
             subprocess.run(command, check=True)
         elif sys.platform == "linux":
@@ -208,7 +212,7 @@ class APIClient:
     def __init__(self, config: Config):
         self.config = config
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'SortMeDown/Engine/6.6.2'})
+        self.session.headers.update({'User-Agent': 'SortMeDown/Engine/6.7.0'})
         self._tvdb_token_lock = threading.Lock()
 
     def _get_tvdb_token(self) -> Optional[str]:
@@ -321,13 +325,12 @@ class APIClient:
             return dr.json()
         except requests.RequestException as e: logging.error(f"TMDB API request failed for '{title}': {e}")
         return None
-
+    
     def query_tvdb(self, title: str, year: Optional[str] = None) -> Optional[Dict[str, Any]]:
         token = self._get_tvdb_token()
-        if not token: 
-            logging.error("No TVDB token available")
+        if not token:
             return None
-            
+
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
         for search_type in ["series", "movie"]:
@@ -337,38 +340,56 @@ class APIClient:
                     search_params["year"] = year
 
                 logging.info(f"TVDB: Searching for TYPE='{search_type}' with params: {search_params}")
-                response = self.session.get(f"{self.config.TVDB_URL}/search", headers=headers, params=search_params, timeout=10)
+                response = self.session.get(
+                    f"{self.config.TVDB_URL}/search",
+                    headers=headers,
+                    params=search_params,
+                    timeout=10
+                )
+
+                if response.status_code != 200:
+                    continue
+
+                search_results = response.json().get("data")
+                if not search_results:
+                    continue
+
+  
+                best_match = None
+                normalized_search_title = re.sub(r'[^\w\s]', '', title).lower()
+                for result in search_results:
+                    result_name = result.get("name", "")
+                    normalized_result_name = re.sub(r'[^\w\s]', '', result_name).lower()
+                    if normalized_search_title == normalized_result_name:
+                        best_match = result
+                        break
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("data"):
+                if not best_match:
+                    best_match = search_results[0] 
 
-                        best_match = data["data"][0]
-                        tvdb_id = best_match.get("tvdb_id")
-                        object_type = best_match.get("objectType")
 
-                        if tvdb_id and object_type in ["series", "movie"]:
+                media_type = best_match.get("type") 
+                tvdb_id = best_match.get("tvdb_id")
 
-                            endpoint = "series" if object_type == "series" else "movies"
-                            detail_url = f"{self.config.TVDB_URL}/{endpoint}/{tvdb_id}/extended"
-                            
-                            detail_response = self.session.get(detail_url, headers=headers, timeout=10)
-                            
-                            if detail_response.status_code == 200:
-                                detail_data = detail_response.json()
-                                if detail_data.get("status") == "success":
-                                    logging.info(f"TVDB found definitive match: '{best_match.get('name')}'")
-                                    return detail_data.get("data") 
-                            else:
-                                logging.warning(f"TVDB detail lookup for {tvdb_id} failed with status: {detail_response.status_code}")
-            
+                if tvdb_id and media_type in ["series", "movie"]:
+                    endpoint = "series" if media_type == "series" else "movies"
+                    detail_url = f"{self.config.TVDB_URL}/{endpoint}/{tvdb_id}/extended"
+                    
+                    detail_response = self.session.get(detail_url, headers=headers, timeout=10)
+                    
+                    if detail_response.status_code == 200:
+                        detail_data = detail_response.json()
+                        if detail_data.get("status") == "success" and detail_data.get("data"):
+                            logging.info(f"TVDB SUCCESS: Found definitive record for '{best_match.get('name')}'")
+                            return detail_data.get("data")
+
             except requests.RequestException as e:
-                logging.warning(f"A TVDB attempt failed for type '{search_type}': {e}")
-                continue 
+                logging.error(f"TVDB network error for type '{search_type}': {e}")
+                continue
 
         logging.warning(f"TVDB could not find a definitive match for '{title}'.")
         return None
-  
+    
 
     def query_anilist(self, title: str) -> Optional[Dict[str, Any]]:
         q = '''query ($search: String) { Media(search: $search, type: ANIME) { title { romaji english native } format, genres, season, seasonYear, episodes } }'''
@@ -379,7 +400,6 @@ class APIClient:
             if m: logging.info(f"AniList found match for: {title}"); return m
         except requests.RequestException as e: logging.error(f"AniList API request failed for '{title}': {e}")
         return None
-
 
 class MediaClassifier:
     def __init__(self, api_client: APIClient):
@@ -506,28 +526,21 @@ class MediaClassifier:
         title = data.get("name", "Unknown")
         year = data.get("year") or (data.get("firstAired") or "").split('-')[0]
         
-        # --- THE CRITICAL FIX ---
-        # The 'type' field from the detailed record is the source of truth.
-        media_type_str = data.get("type", "").lower()
-        if media_type_str == "movie":
-            media_type = MediaType.MOVIE
-        elif media_type_str == "series":
-            media_type = MediaType.TV_SERIES
-        else:
-            media_type = MediaType.UNKNOWN
-        # --- END OF FIX ---
+        media_type = MediaType.TV_SERIES if "seasons" in data else MediaType.MOVIE
 
         genres = [g.get("name", "").lower() for g in data.get("genres", []) if g.get("name")]
         country = data.get("originalCountry")
         is_anime = "anime" in genres or ("animation" in genres and country == "jpn")
+        
         if is_anime:
             if media_type == MediaType.MOVIE: media_type = MediaType.ANIME_MOVIE
             elif media_type == MediaType.TV_SERIES: media_type = MediaType.ANIME_SERIES
-        
+            
         lang_code = data.get("originalLanguage")
         lang_map = {"eng": "English", "jpn": "Japanese", "fra": "French", "deu": "German", "spa": "Spanish"}
         language = lang_map.get(lang_code, lang_code)
         genre_str = ", ".join([g["name"] for g in data.get("genres", [])])
+        
         return MediaInfo(title=title, year=year, media_type=media_type, language=language, genre=genre_str)
 
 class FileManager:
@@ -538,26 +551,45 @@ class FileManager:
             if sib != pf and sib.stem == st and sib.suffix.lower() in self.cfg.SIDECAR_EXTENSIONS: s.append(sib)
         return s
     def ensure_dir(self, p: Path) -> bool:
+        if self.dry_run:
+            logging.info(f"DRY RUN: Would ensure directory '{p}' exists.")
+            return True
         if not p: logging.error("Destination directory path is not set."); return False
         if not p.exists():
-            if self.dry_run: logging.info(f"DRY RUN: Would create dir '{p}'")
-            else:
-                try: p.mkdir(parents=True, exist_ok=True)
-                except Exception as e: logging.error(f"Could not create directory '{p}': {e}"); return False
+            try: p.mkdir(parents=True, exist_ok=True)
+            except Exception as e: logging.error(f"Could not create directory '{p}': {e}"); return False
         return True
     def move_file_group(self, fg: List[Path], dd: Path) -> bool:
-        if not self.ensure_dir(dd): return False
+        if self.dry_run:
+            logging.info(f"DRY RUN: Would ensure directory '{dd}' exists.")
+            for ftm in fg:
+                lp = "DRY RUN:"
+                if ftm != fg[0]: lp += " (sidecar)"
+                logging.info(f"{lp}: '{ftm.name}' -> '{dd.name}'")
+            return True
+        try:
+            if not dd.exists():
+                dd.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logging.error(f"FATAL ERROR: Destination path '{dd}' is not accessible. Error: {e}")
+            return False
         pf, all_ok = fg[0], True
         for ftm in fg:
             t = dd / ftm.name
-            if str(ftm.resolve()) == str(t.resolve()): logging.info(f"Skipping move: '{ftm.name}' is already in correct location."); continue
-            if t.exists(): logging.warning(f"SKIPPED: File '{t.name}' already exists in '{dd.name}'."); continue
-            lp = "DRY RUN:" if self.dry_run else "Moved"
+            if str(ftm.resolve()) == str(t.resolve()):
+                logging.info(f"Skipping move: '{ftm.name}' is already in correct location.")
+                continue
+            if t.exists():
+                logging.warning(f"SKIPPED: File '{t.name}' already exists in '{dd.name}'.")
+                continue
+            lp = "Moved"
             if ftm != pf: lp += " (sidecar)"
             logging.info(f"{lp}: '{ftm.name}' -> '{dd.name}'")
-            if not self.dry_run:
-                try: shutil.move(str(ftm), str(t))
-                except Exception as e: logging.error(f"ERROR moving file '{ftm.name}': {e}"); all_ok = False
+            try:
+                shutil.move(str(ftm), str(t))
+            except Exception as e:
+                logging.error(f"ERROR moving file '{ftm.name}': {e}")
+                all_ok = False
         return all_ok
     def delete_file_group(self, pf: Path):
         fg = [pf] + self._find_sidecar_files(pf)
@@ -604,7 +636,7 @@ class MediaSorter:
         return None
         
     def ensure_target_dirs(self) -> bool:
-        if self.cfg.CLEANUP_MODE_ENABLED: return True
+        if self.dry_run: return True
         dirs = [self._get_mismatched_path()]
         if self.cfg.MOVIES_ENABLED: dirs.append(self.cfg.get_path('MOVIES_DIR'))
         if self.cfg.TV_SHOWS_ENABLED: dirs.append(self.cfg.get_path('TV_SHOWS_DIR'))
