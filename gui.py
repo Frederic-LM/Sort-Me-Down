@@ -4,8 +4,10 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
-v6.6.2
-- Startup bug fix
+v6.6.3
+- BUG FIX: Tray sync
+- BUG FIX: Startup crash
+- BUG FIX: limit to single instance
 
 v6.6.1
 - Release with new bangbang
@@ -530,7 +532,9 @@ class App(ctk.CTk):
         
     def start_sort_now(self): self.start_task(lambda s: s.process_source_directory())
     def toggle_watch_mode(self):
-        if self.sorter_thread and self.sorter_thread.is_alive(): self.stop_running_task()
+        if self.sorter_thread and self.sorter_thread.is_alive(): 
+            self.stop_running_task()
+            if self.tray_icon: self.tray_icon.update_menu() 
         else: self.start_task(lambda s: s.start_watch_mode(), True)
 
     def _start_reorganize_task(self, task_function, action_name: str, task_args: tuple):
@@ -791,8 +795,24 @@ X-GNOME-Autostart-Delay=0
         self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True); self.tray_thread.start()
 
 if __name__ == "__main__":
-    autostart = "--autostart" in sys.argv
-    app = App(start_hidden=autostart)
-    if autostart:
-        app.after(1000, app.toggle_watch_mode)
-    app.mainloop()
+    config_dir = get_config_path().parent
+    lock_file_path = config_dir / f"{APP_NAME}.lock"
+
+    if lock_file_path.exists():
+
+        messagebox.showerror(f"{APP_NAME} is Already Running", 
+                             f"Another instance of {APP_NAME} is already running. Please check your system tray.")
+        sys.exit(1) 
+    try:
+        lock_file_path.touch()
+
+
+        autostart = "--autostart" in sys.argv
+        app = App(start_hidden=autostart)
+        if autostart:
+            app.after(1000, app.toggle_watch_mode)
+        app.mainloop()
+
+    finally:
+        if lock_file_path.exists():
+            lock_file_path.unlink()
