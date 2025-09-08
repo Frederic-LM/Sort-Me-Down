@@ -13,6 +13,10 @@ argument parsing. It communicates its state and progress via `logging` and
 its public methods.
 
 
+Version 6.7.1
+- FIXED: Double Date string
+- IMPROVED: smarter API call to tvdb -40% api call
+
 Version 6.7.0 (Stable Release)
 - FIXED: UnboundLocalError crash in sort_item by standardizing on 'stats' variable.Again
 - FIXED: Reworked query_tvdb to correctly handle API search results, fixing all TVDB failures.Again
@@ -102,7 +106,8 @@ class MediaInfo:
     def get_folder_name(self) -> str:
         if not self.title: return "Unknown"
         folder_title = re.sub(r'[<>:"/\\|?*]', '', self.title).strip()
-        if self.year: return f"{folder_title} ({self.year})"
+        if self.year and self.year not in folder_title:
+            return f"{folder_title} ({self.year})"
         return folder_title
 
 def setup_logging(log_file: Path, log_to_console: bool = False):
@@ -326,26 +331,31 @@ class APIClient:
         except requests.RequestException as e: logging.error(f"TMDB API request failed for '{title}': {e}")
         return None
     
-    def query_tvdb(self, title: str, year: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def query_tvdb(self, title: str, year: Optional[str] = None, hints: Optional[Dict[str, bool]] = None) -> Optional[Dict[str, Any]]:
         token = self._get_tvdb_token()
         if not token:
             return None
 
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        
+        
+        search_order = ["series", "movie"] 
+        if hints:
+            if hints.get('likely_series'):
+                search_order = ["series", "movie"]
+                logging.info("TVDB Hint: Prioritizing SERIES search based on filename.")
+            elif hints.get('likely_movie'):
+                search_order = ["movie", "series"]
+                logging.info("TVDB Hint: Prioritizing MOVIE search based on filename.")
 
-        for search_type in ["series", "movie"]:
+        for search_type in search_order: 
             try:
                 search_params = {"query": title, "type": search_type}
                 if year:
                     search_params["year"] = year
 
                 logging.info(f"TVDB: Searching for TYPE='{search_type}' with params: {search_params}")
-                response = self.session.get(
-                    f"{self.config.TVDB_URL}/search",
-                    headers=headers,
-                    params=search_params,
-                    timeout=10
-                )
+                response = self.session.get(f"{self.config.TVDB_URL}/search", headers=headers, params=search_params, timeout=10)
 
                 if response.status_code != 200:
                     continue
@@ -354,8 +364,7 @@ class APIClient:
                 if not search_results:
                     continue
 
-  
-                best_match = None
+                best_match = search_results[0] 
                 normalized_search_title = re.sub(r'[^\w\s]', '', title).lower()
                 for result in search_results:
                     result_name = result.get("name", "")
@@ -363,30 +372,26 @@ class APIClient:
                     if normalized_search_title == normalized_result_name:
                         best_match = result
                         break
-                
-                if not best_match:
-                    best_match = search_results[0] 
 
-
-                media_type = best_match.get("type") 
+                media_type = best_match.get("type")
                 tvdb_id = best_match.get("tvdb_id")
 
                 if tvdb_id and media_type in ["series", "movie"]:
                     endpoint = "series" if media_type == "series" else "movies"
                     detail_url = f"{self.config.TVDB_URL}/{endpoint}/{tvdb_id}/extended"
-                    
                     detail_response = self.session.get(detail_url, headers=headers, timeout=10)
                     
                     if detail_response.status_code == 200:
                         detail_data = detail_response.json()
                         if detail_data.get("status") == "success" and detail_data.get("data"):
                             logging.info(f"TVDB SUCCESS: Found definitive record for '{best_match.get('name')}'")
-                            return detail_data.get("data")
+                            return detail_data.get("data") 
 
             except requests.RequestException as e:
                 logging.error(f"TVDB network error for type '{search_type}': {e}")
                 continue
-
+        
+      
         logging.warning(f"TVDB could not find a definitive match for '{title}'.")
         return None
     
@@ -465,7 +470,10 @@ class MediaClassifier:
         for provider in provider_order:
             logging.info(f"Trying {provider.upper()} API...")
             query_func = getattr(self.api_client, f"query_{provider}")
-            main_api_data = query_func(clean_title, year=year)
+            if provider == 'tvdb':
+                main_api_data = query_func(clean_title, year=year, hints=content_hints)
+            else:
+                main_api_data = query_func(clean_title, year=year)
             sleep(cfg.REQUEST_DELAY)
             if main_api_data:
                 successful_provider = provider
