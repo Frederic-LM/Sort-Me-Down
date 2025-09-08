@@ -214,8 +214,57 @@ class APIClient:
         return None
 
 class MediaClassifier:
-    def __init__(self, api_client: APIClient):
-        self.api_client = api_client
+    def __init__(self, config: Config):
+        self.api_client = APIClient(config)
+
+    def _detect_content_hints(self, filename: str, clean_name: str) -> Dict[str, bool]:
+        hints = {'likely_anime': False, 'likely_series': False, 'likely_movie': False}
+        anime_keywords = ['subbed', 'dubbed', 'vostfr', 'anime']
+        # BUG FIX: Removed generic '[.*]' pattern which was too aggressive.
+        anime_patterns = [r'\b(OVA|ONA|BD|BDRip)\b'] 
+        
+        hints['likely_anime'] = any(keyword in filename.lower() for keyword in anime_keywords) or \
+                              any(re.search(pattern, filename, re.IGNORECASE) for pattern in anime_patterns)
+        
+        has_episode_info = TitleCleaner.extract_episode_info(filename) is not None
+        has_season_info = TitleCleaner.extract_season_info(filename) is not None
+        hints['likely_series'] = has_episode_info or has_season_info
+        
+        movie_keywords = ['1080p', '720p', '4k', 'bluray', 'webrip', 'dvdrip']
+        hints['likely_movie'] = not hints['likely_series'] and any(keyword in filename.lower() for keyword in movie_keywords)
+        return hints
+
+    def _get_optimal_provider_order(self, content_hints: Dict[str, bool], config: Config) -> List[str]:
+        available_providers = []
+        if config.OMDB_API_KEY and config.OMDB_API_KEY != "yourkey": available_providers.append('omdb')
+        if config.TMDB_API_KEY and config.TMDB_API_KEY != "yourkey": available_providers.append('tmdb')
+        if config.TVDB_API_KEY and config.TVDB_API_KEY != "yourkey": available_providers.append('tvdb')
+        if not available_providers: return []
+        
+        primary = config.API_PROVIDER
+        provider_order = [primary] if primary in available_providers else []
+        remaining = [p for p in available_providers if p != primary]
+        
+        priority_map = {
+            'likely_anime': ['tmdb', 'tvdb', 'omdb'],
+            'likely_series': ['tvdb', 'tmdb', 'omdb'],
+            'likely_movie': ['tmdb', 'omdb', 'tvdb']
+        }
+        
+        content_type = next((ctype for ctype, is_present in content_hints.items() if is_present), None)
+        if content_type:
+            for provider in priority_map[content_type]:
+                if provider in remaining:
+                    provider_order.append(provider)
+                    remaining.remove(provider)
+        
+        provider_order.extend(remaining)
+        return provider_order
+
+class MediaClassifier:
+    def __init__(self, config: Config):
+        # This now correctly takes the config and creates its own APIClient
+        self.api_client = APIClient(config)
 
     def _detect_content_hints(self, filename: str, clean_name: str) -> Dict[str, bool]:
         hints = {'likely_anime': False, 'likely_series': False, 'likely_movie': False}
@@ -269,7 +318,8 @@ class MediaClassifier:
         
         logging.info(f"Classifying: '{name}' -> Clean search: '{clean_title}'" + (f" (Year: {year})" if year else ""))
         content_hints = self._detect_content_hints(filename or name, clean_title)
-        cfg = self.api_client.config
+        
+        cfg = self.api_client.config 
         provider_order = self._get_optimal_provider_order(content_hints, cfg)
         
         if not provider_order:
@@ -278,7 +328,6 @@ class MediaClassifier:
         
         logging.info(f"Provider priority: {' → '.join(p.upper() for p in provider_order)}")
         
-        # AniList check
         anilist_data = None
         if content_hints['likely_anime'] and (cfg.ANIME_MOVIES_ENABLED or cfg.ANIME_SERIES_ENABLED):
             logging.info("Anime suspected - checking AniList first")
@@ -287,7 +336,6 @@ class MediaClassifier:
             if anilist_data:
                 return self._classify_from_anilist(anilist_data)
 
-        # Main API provider loop
         main_api_data, successful_provider = None, None
         for provider in provider_order:
             logging.info(f"Trying {provider.upper()} API...")
@@ -307,7 +355,6 @@ class MediaClassifier:
             else:
                 logging.warning(f"{provider.upper()} returned no results")
 
-        # Fallback AniList check
         if not main_api_data and not anilist_data and (cfg.ANIME_MOVIES_ENABLED or cfg.ANIME_SERIES_ENABLED):
             logging.info("Main APIs failed - trying AniList as fallback")
             anilist_data = self.api_client.query_anilist(clean_title)
