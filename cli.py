@@ -42,8 +42,10 @@ import logging
 import os
 from pathlib import Path
 
-# Import the shared engine components
-from bangbang import Config, MediaSorter, setup_logging
+# Import the shared engine components one file v <6.7
+#from bangbang import Config, MediaSorter, setup_logging
+#Import the shared engine component
+from bangbang_engine import Config, MediaSorter, setup_logging
 
 APP_NAME = "SortMeDown"
 
