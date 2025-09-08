@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Optional, Set, Tuple
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
         base_path = Path(sys._MEIPASS)
     except Exception:
@@ -103,3 +102,4 @@ class TitleCleaner:
         cy = datetime.now().year
         py = [m for m in ms if 1900 <= int(m) <= cy + 2]
         return py[-1] if py else None
+
