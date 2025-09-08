@@ -12,7 +12,7 @@
   ░ ░▒  ░ ░  ░ ▒ ▒░   ░▒ ░ ▒░    ░       ░  ░      ░ ░ ░  ░    ░ ▒  ▒   ░ ▒ ▒░   ▒ ░ ░ ░ ░░   ░ ▒░
   ░  ░  ░  ░ ░ ░ ▒    ░░   ░   ░         ░      ░      ░       ░ ░  ░ ░ ░ ░ ▒    ░   ░    ░   ░ ░ 
         ░      ░ ░      ░                        ░      ░  ░      ░        ░ ░      ░        ░   
-                     CLI Media Sorter Script                                           v6.0.1
+                     CLI Media Sorter Script                                           v6.7.1
 ```
 
 **A powerful, configurable media sorter with both GUI and CLI interfaces**
@@ -28,7 +28,7 @@
 
 ## 🌟 Overview
 
-SortMeDown automatically organizes your movies, TV shows, and anime into a clean, structured library. It fetches metadata from OMDb , AniList, TMDB or TVDB to correctly identify and rename your files, then moves them to your specified library directories with intelligent conflict resolution.
+SortMeDown automatically organizes your movies, TV shows, and anime into a clean, structured library. It fetches rich metadata from multiple APIs including TMDB, TVDB, OMDb, and AniList to correctly identify your files. It can rename your media, move it to specified library directories, and even reorganize your existing collection with intelligent conflict resolution.
 
 ## ✨ Key Features
 
@@ -39,6 +39,7 @@ SortMeDown automatically organizes your movies, TV shows, and anime into a clean
 ### 🎯 **Smart Organization**
 - 🤖 **Automatic Detection** - Movies, TV Series, Anime Movies & Series
 - 🧠 **Intelligent Conflict Resolution** - Compares filenames to API results
+- 🛠️ **Full Library Management** - Reorganize existing libraries into clean folders and rename files to a consistent format.
 - 📂 **Configurable Fallbacks** - Handle mismatched files your way
 - 🇫🇷 **Language Support** - Route specific language content to dedicated directories
 
@@ -46,10 +47,10 @@ SortMeDown automatically organizes your movies, TV shows, and anime into a clean
 <td width="50%">
 
 ### 🚀 **Powerful Interfaces**
-- 🎭 **Dual Modes** - GUI for ease, CLI for power users
+- 🎭 **Dual Modes** -  A full-featured GUI for ease of use and a powerful CLI for automation.s
 - ⏱️ **Watch Mode** - Monitor folders for new files automatically
-- 🧪 **Dry-Run Mode** - Preview operations safely
-- 🛠️ **Clean Architecture** - UI-agnostic core engine
+- 🧪 **Dry-Run Mode** - Preview all operations safely without touching your files.
+- 🛠️ **Clean Architecture** - Built on a modular, UI-agnostic core engine for stability and maintainability.
 
 </td>
 </tr>
@@ -91,12 +92,11 @@ pip install -r requirements.txt
 
 ### 2️⃣ Get Your API Key
 
-> 🔑 **Free OMDb API Key Required**
+> 🔑 **At least one free API key is required.**
 > 
-> 1. Visit [omdbapi.com/apikey.aspx](http://www.omdbapi.com/apikey.aspx)
-> 2. Select the **FREE** plan
-> 3. Enter your email
-> 4. Check your inbox for the API key
+> 1. **TMDB (Recommended)**: Visit [themoviedb.org/signup](https://www.themoviedb.org/signup), create an account, then go to `Settings > API` to get your key.
+> 2. **TVDB**: Visit [thetvdb.com](https://www.thetvdb.com/), create an account, and get your API key from your dashboard.
+> 3. **OMDb (very easy to get for free)**: Visit [omdbapi.com/apikey.aspx](http://www.omdbapi.com/apikey.aspx) and get a free key via email.
 
 ### 3️⃣ Initial Configuration
 
@@ -104,7 +104,7 @@ pip install -r requirements.txt
 # Run once to create default config
 python gui.py
 # OR
-python cli.py
+python cli.py sort
 ```
 
 ### 4️⃣ Configure Your Paths
@@ -119,11 +119,15 @@ Edit the generated `config.json`:
     "ANIME_MOVIES_DIR": "D:/Media/Anime Movies",
     "ANIME_SERIES_DIR": "D:/Media/Anime Series",
     "MISMATCHED_DIR": "C:/Path/To/Your/Downloads/_Mismatched",
+    "API_PROVIDER": "tmdb",
+    "TMDB_API_KEY": "your_tmdb_api_key_here",
+    "TVDB_API_KEY": "your_tvdb_api_key_here",
+    "TVDB_PIN": "",
     "OMDB_API_KEY": "your_omdb_api_key_here"
 }
 ```
 
-> 💡 **Windows Users**: Use forward slashes `/` or double backslashes `\\` in paths
+> 💡 **Windows Users**: Use forward slashes `/` or double backslashes `\\` in paths in the JSON file.
 
 ---
 
@@ -139,6 +143,8 @@ python gui.py
 
 **Features:**
 - **Actions Tab** - Start sorting, enable watch mode, configure fallbacks
+- **Reorganize Tab:** Scan an existing media library, preview changes, and organize files into folders or rename them.
+- **Review Tab:** Manually review and re-process files that could not be identified automatically.
 - **Settings Tab** - Manage library paths, API keys, and advanced options
 - **Real-time Status** - See what's happening as it happens
 
