@@ -1,6 +1,7 @@
 # bangbang.py
 """
-BangBang - Core Engine
+LEGACY (used for GUI <6.7)
+BangBang - Core Engine 
 ===============================
 
 This file contains the core, reusable logic for the SortMeDown media sorter.
@@ -938,3 +939,4 @@ class MediaSorter:
             if v > 0: summary += f"{k.replace('_',' ').title():<20}: {v}\n"
         summary += f"--------------------------\n"
         logging.info(summary)
+
