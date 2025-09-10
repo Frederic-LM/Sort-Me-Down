@@ -4,6 +4,12 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
+v6.6.5
+- BUG FIX: review
+
+v6.6.4
+- Uuse bangbang refactored
+
 v6.6.3
 - BUG FIX: Tray sync
 - BUG FIX: Startup crash
@@ -106,8 +112,8 @@ from typing import List, Dict
 import math
 import subprocess
 import shutil
-
-import bangbang as backend
+import bangbang_engine as backend
+#import bangbang as backend
 
 APP_NAME = "SortMeDown"
 
@@ -424,8 +430,7 @@ class App(ctk.CTk):
             b.configure(fg_color=self.default_button_color if p == file_path else "transparent")
         self.update_config_from_ui()
         stem = self.selected_mismatched_file.stem
-        clean_title = backend.TitleCleaner.clean_for_search(stem, self.config.CUSTOM_STRINGS_TO_REMOVE)
-        year = backend.TitleCleaner.extract_year(stem)
+        clean_title, year = backend.TitleCleaner.extract_search_terms(stem, self.config.CUSTOM_STRINGS_TO_REMOVE)
         suggested_name = f"{clean_title} ({year})" if year else clean_title
         self.mismatch_name_entry.delete(0, ctk.END)
         self.mismatch_name_entry.insert(0, suggested_name)
