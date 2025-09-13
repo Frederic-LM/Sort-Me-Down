@@ -383,10 +383,11 @@ class MediaClassifier:
         t_ = d.get("Type", "").lower()
         mt = MediaType.MOVIE if t_ == "movie" else MediaType.TV_SERIES if t_ in ["series", "tv series"] else MediaType.UNKNOWN
         genre = d.get("Genre", "").lower()
-        country = d.get("Country", "").lower()
-        if "animation" in genre and "japan" in country:
+
+        if "animation" in genre:
             if mt == MediaType.TV_SERIES: mt = MediaType.ANIME_SERIES
             elif mt == MediaType.MOVIE: mt = MediaType.ANIME_MOVIE
+            
         return MediaInfo(title=d.get("Title"), year=(d.get("Year", "") or "").split('–')[0], media_type=mt, language=d.get("Language", ""), genre=d.get("Genre", ""))
 
     def _classify_from_tmdb(self, d: Dict[str, Any]) -> MediaInfo:
@@ -395,10 +396,11 @@ class MediaClassifier:
         t = d.get("title") if is_m else d.get("name")
         y = (d.get("release_date") or d.get("first_air_date") or "{}").split('-')[0]
         genres = [g.get("name", "").lower() for g in d.get("genres", [])]
-        origin_countries = d.get("origin_country", [])
-        if "animation" in genres and "JP" in origin_countries:
+
+        if "animation" in genres:
              if mt == MediaType.TV_SERIES: mt = MediaType.ANIME_SERIES
              elif mt == MediaType.MOVIE: mt = MediaType.ANIME_MOVIE
+
         lang = ""
         if d.get("translations"):
             et = next((t for t in d["translations"]["translations"] if t["iso_639_1"] == "en"), None)
@@ -411,8 +413,8 @@ class MediaClassifier:
         year = data.get("year") or (data.get("firstAired") or "").split('-')[0]
         media_type = MediaType.TV_SERIES if "seasons" in data else MediaType.MOVIE
         genres = [g.get("name", "").lower() for g in data.get("genres", []) if g.get("name")]
-        country = data.get("originalCountry")
-        is_anime = "anime" in genres or ("animation" in genres and country == "jpn")
+        
+        is_anime = "anime" in genres or "animation" in genres
         
         if is_anime:
             if media_type == MediaType.MOVIE: media_type = MediaType.ANIME_MOVIE
