@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Set, Tuple
 
 def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
         base_path = Path(sys._MEIPASS)
     except Exception:
@@ -37,6 +38,19 @@ def send_notification(title, message, app_name="SortMeDown"):
                 logging.warning("`notify-send` command not found. Cannot send notification.")
     except Exception as e:
         logging.warning(f"Failed to send notification: {e}")
+        
+def setup_logging(log_file: Path, log_to_console: bool = False):
+    """Configures the logging for the application."""
+    handlers = [logging.FileHandler(log_file, encoding='utf-8')]
+    if log_to_console:
+        handlers.append(logging.StreamHandler(sys.stdout))
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=handlers,
+        force=True
+    )
 
 class TitleCleaner:
     METADATA_BREAKPOINT_PATTERN = re.compile(r'('
@@ -102,4 +116,3 @@ class TitleCleaner:
         cy = datetime.now().year
         py = [m for m in ms if 1900 <= int(m) <= cy + 2]
         return py[-1] if py else None
-
