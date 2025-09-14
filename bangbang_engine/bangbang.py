@@ -5,6 +5,7 @@ import re
 import threading
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
+
 from .api import MediaClassifier
 from .config import Config
 from .file_manager import DirectoryWatcher, FileManager
@@ -26,6 +27,7 @@ class MediaSorter:
         self.stop_event.set()
         logging.info("Stop signal received. Finishing current item...")
 
+    # --- RESTORED FUNCTION ---
     def force_move_item(self, item: Path, folder_name: str, media_type: MediaType, is_split_lang_override: bool = False):
         logging.info(f"FORCE MOVE: Manually classifying '{item.name}' as {media_type.value} into folder '{folder_name}'.")
         files_to_move = [item] + self.fm._find_sidecar_files(item)
@@ -89,46 +91,38 @@ class MediaSorter:
         
         filename_context = item.name
         initial_info = None
+        search_term = ""
 
         if override_name:
             search_term = override_name
             initial_info = self.classifier.classify_media(override_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
         else:
-            # --- NEW, SMARTER LOGIC ---
-            # 1. Always prioritize the filename, as it's the most reliable source.
             search_term = item.name
             initial_info = self.classifier.classify_media(search_term, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
             
-            # 2. If filename fails, and it's in a sub-folder, try the folder name as a fallback.
             is_sub = item.parent.resolve() != self.cfg.get_path('SOURCE_DIR').resolve()
             if initial_info.media_type == MediaType.UNKNOWN and is_sub:
                 logging.warning(f"Filename search for '{search_term}' failed. Trying parent folder: '{item.parent.name}'")
                 search_term = item.parent.name
                 fallback_info = self.classifier.classify_media(search_term, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
                 if fallback_info.media_type != MediaType.UNKNOWN:
-                    logging.info("Parent folder fallback successful.")
-                    initial_info = fallback_info
+                    logging.info("Parent folder fallback successful."); initial_info = fallback_info
                 else:
                     logging.warning(f"Parent folder fallback for '{search_term}' also failed.")
-            # --- END OF NEW LOGIC ---
 
         info = self._validate_api_result(item, search_term, initial_info)
         files_to_move = [item] + self.fm._find_sidecar_files(item)
-        stats = self.stats
-        logging.info(f"Class: {info.media_type.value} | Title: '{info.get_folder_name()}'" + (f" | Found {len(files_to_move) - 1} sidecars." if len(files_to_move) > 1 else ""))
+        logging.info(f"Class: {info.media_type.value} | Title: '{info.get_folder_name()}'")
         
         if info.media_type == MediaType.UNKNOWN:
-            self._handle_unknown(item, info, files_to_move)
-            return
+            self._handle_unknown(item, info, files_to_move); return
 
         type_enabled_map = {
-            MediaType.MOVIE: self.cfg.MOVIES_ENABLED, 
-            MediaType.TV_SERIES: self.cfg.TV_SHOWS_ENABLED,
-            MediaType.ANIME_MOVIE: self.cfg.ANIME_MOVIES_ENABLED, 
-            MediaType.ANIME_SERIES: self.cfg.ANIME_SERIES_ENABLED
+            MediaType.MOVIE: self.cfg.MOVIES_ENABLED, MediaType.TV_SERIES: self.cfg.TV_SHOWS_ENABLED,
+            MediaType.ANIME_MOVIE: self.cfg.ANIME_MOVIES_ENABLED, MediaType.ANIME_SERIES: self.cfg.ANIME_SERIES_ENABLED
         }
-        if not type_enabled_map.get(info.media_type, True):
-            return
+        if not type_enabled_map.get(info.media_type, True): return
+
 
         base_dir_map = {
             MediaType.MOVIE: self.cfg.get_path('MOVIES_DIR'), 
@@ -136,30 +130,47 @@ class MediaSorter:
             MediaType.ANIME_MOVIE: self.cfg.get_path('ANIME_MOVIES_DIR'), 
             MediaType.ANIME_SERIES: self.cfg.get_path('ANIME_SERIES_DIR')
         }
-        base_dir = item.parent if self.cfg.CLEANUP_MODE_ENABLED else base_dir_map.get(info.media_type)
+        base_dir = base_dir_map.get(info.media_type)
 
-        if info.media_type == MediaType.MOVIE and not self.cfg.CLEANUP_MODE_ENABLED:
+        if info.media_type == MediaType.MOVIE:
             base_dir = self._get_split_language_dir(item, info) or base_dir
 
         if not base_dir:
-            logging.error(f"Target dir for {info.media_type.value} not set.")
-            stats['errors'] += 1
-            return
+            logging.error(f"Target directory for {info.media_type.value} is not set in config."); self.stats['errors'] += 1; return
         
+
+        dest_folder = None
         if info.media_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]:
-            self._move_movie(item, info, files_to_move, base_dir)
+            dest_folder = base_dir / info.get_folder_name()
         elif info.media_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
-            self._move_series(item, info, files_to_move, base_dir)
+            season = TitleCleaner.extract_season_info(item.name) or 1
+            dest_folder = base_dir / info.get_folder_name() / f"Season {season:02d}"
+        
+        if not dest_folder:
+            logging.error("Could not determine a destination folder."); self.stats['errors'] += 1; return
+
+
+        if dest_folder.resolve() == item.parent.resolve():
+            logging.info(f"Already in correct location: '{item.name}'"); return
+            
+        if self.fm.move_file_group(files_to_move, dest_folder):
+            key_map = {
+                MediaType.MOVIE: 'movies', MediaType.TV_SERIES: 'tv',
+                MediaType.ANIME_MOVIE: 'anime_movies', MediaType.ANIME_SERIES: 'anime_series'
+            }
+            key = key_map.get(info.media_type, 'unknown')
+            self.stats[key] = self.stats.get(key, 0) + 1
+        else:
+            self.stats['errors'] += 1
+
+            
 
     def _handle_unknown(self, item: Path, info: MediaInfo, files_to_move: List[Path]):
         stats = self.stats
         if self.cfg.CLEANUP_MODE_ENABLED: return
         
         mpath = self._get_mismatched_path()
-        if not mpath:
-            logging.error("Mismatched dir not set. Skipping.")
-            stats['errors'] += 1
-            return
+        if not mpath: logging.error("Mismatched dir not set. Skipping."); stats['errors'] += 1; return
         
         is_series = TitleCleaner.extract_season_info(item.name) is not None
         if is_series:
@@ -168,10 +179,7 @@ class MediaSorter:
             
             dmap = {"tv": self.cfg.get_path('TV_SHOWS_DIR'), "anime": self.cfg.get_path('ANIME_SERIES_DIR'), "mismatched": mpath}
             bdir = dmap.get(fdest)
-            if not bdir:
-                logging.error(f"Fallback dir '{fdest}' not set.")
-                stats['errors'] += 1
-                return
+            if not bdir: logging.error(f"Fallback dir '{fdest}' not set."); stats['errors'] += 1; return
             
             df = bdir / info.get_folder_name() / f"Season {TitleCleaner.extract_season_info(item.name) or 1:02d}"
             if self.fm.move_file_group(files_to_move, df):
@@ -183,13 +191,11 @@ class MediaSorter:
                 stats['unknown'] = stats.get('unknown', 0) + 1
                 if self.cfg.NOTIFY_ON_MISMATCH:
                     send_notification(title="File Needs Review", message=f"'{item.name}' was moved to Mismatched.")
-            else:
-                stats['errors'] += 1
+            else: stats['errors'] += 1
 
     def _get_split_language_dir(self, item: Path, info: MediaInfo) -> Optional[Path]:
         split_dir = self.cfg.get_path('SPLIT_MOVIES_DIR')
-        if not (split_dir and self.cfg.LANGUAGES_TO_SPLIT):
-            return None
+        if not (split_dir and self.cfg.LANGUAGES_TO_SPLIT): return None
 
         movie_langs_full = [lang.strip().lower() for lang in (info.language or "").split(',')]
         split_lang_codes = [code.strip().lower() for code in self.cfg.LANGUAGES_TO_SPLIT]
@@ -197,18 +203,16 @@ class MediaSorter:
         should_split, matched_code, matched_reason = False, "", ""
         for code in split_lang_codes:
             if any(full_lang.startswith(code) for full_lang in movie_langs_full):
-                should_split, matched_code, matched_reason = True, code, f"API language '{info.language}'"
-                break
+                should_split, matched_code, matched_reason = True, code, f"API language '{info.language}'"; break
         
         if not should_split:
             original_filename_lower = item.name.lower()
-            # You can add more language keywords here if needed
             french_keywords = ['french', 'francais', 'français']
             if 'fr' in split_lang_codes and any(kw in original_filename_lower for kw in french_keywords):
                 should_split, matched_code, matched_reason = True, 'fr', "filename keyword"
 
             if not should_split and any(cs.lower() in original_filename_lower for cs in self.cfg.CUSTOM_STRINGS_TO_REMOVE):
-                 if 'fr' in split_lang_codes: # Example for French custom strings
+                 if 'fr' in split_lang_codes:
                     should_split, matched_code, matched_reason = True, 'fr', "custom string keyword"
         
         if should_split:
@@ -216,35 +220,138 @@ class MediaSorter:
             return split_dir
         return None
 
-    def _move_movie(self, item: Path, info: MediaInfo, files_to_move: List[Path], base_dir: Path):
+    
+    def _move_movie(self, item: Path, info: MediaInfo, files_to_move: List[Path], dest_folder: Path):
         stats = self.stats
         key = 'anime_movies' if info.media_type == MediaType.ANIME_MOVIE else 'movies'
-        if base_dir == self.cfg.get_path('SPLIT_MOVIES_DIR'):
+        if dest_folder.parent == self.cfg.get_path('SPLIT_MOVIES_DIR'): 
             key = 'split_lang_movies'
         
-        dest_folder = base_dir / info.get_folder_name()
-        if self.cfg.CLEANUP_MODE_ENABLED and dest_folder.resolve() == item.parent.resolve():
+        if self.fm.move_file_group(files_to_move, dest_folder): 
             stats[key] = stats.get(key, 0) + 1
-            return
-        
-        if self.fm.move_file_group(files_to_move, dest_folder):
-            stats[key] = stats.get(key, 0) + 1
-        else:
+        else: 
             stats['errors'] += 1
 
-    def _move_series(self, item: Path, info: MediaInfo, files_to_move: List[Path], base_dir: Path):
+  
+    def _move_series(self, item: Path, info: MediaInfo, files_to_move: List[Path], dest_folder: Path):
         stats = self.stats
         key = 'anime_series' if info.media_type == MediaType.ANIME_SERIES else 'tv'
         
-        dest_folder = base_dir / info.get_folder_name() / f"Season {TitleCleaner.extract_season_info(item.name) or 1:02d}"
-        if self.cfg.CLEANUP_MODE_ENABLED and dest_folder.resolve() == item.parent.resolve():
+        if self.fm.move_file_group(files_to_move, dest_folder): 
             stats[key] = stats.get(key, 0) + 1
-            return
-
-        if self.fm.move_file_group(files_to_move, dest_folder):
-            stats[key] = stats.get(key, 0) + 1
-        else:
+        else: 
             stats['errors'] += 1
+
+    def reorganize_folder_structure(self, library_path: Path, file_list: List[Path]):
+        self.is_processing = True
+        self.stop_event.clear()
+        try:
+            logging.info(f"--- Starting Reorganization for Library: '{library_path}' ---")
+            
+            total_files = len(file_list)
+            if self.progress_callback: self.progress_callback(0, total_files)
+
+            for i, item in enumerate(file_list):
+                if self.stop_event.is_set(): logging.warning("Reorganization aborted."); break
+                self.sort_item(item)
+                
+                if self.progress_callback: self.progress_callback(i + 1, total_files)
+        finally:
+            self.is_processing = False
+            logging.info("--- Reorganization Finished ---")
+                
+    def generate_rename_plan(self, target_path: Path, file_list: List[Path], quick_clean_only: bool) -> Dict[Path, Path]:
+        self.is_processing = True
+        self.stop_event.clear()
+        rename_plan = {}
+        total_files = len(file_list)
+        log_prefix = "Quick Clean" if quick_clean_only else "API-Based Rename"
+        try:
+            logging.info(f"--- Generating Rename Plan ({log_prefix}) for {total_files} files ---")
+            if self.progress_callback: self.progress_callback(0, total_files)
+            for i, item in enumerate(file_list):
+                if self.stop_event.is_set(): logging.warning("Rename plan generation aborted."); break
+                logging.info(f"Analyzing: '{item.relative_to(target_path)}'")
+                if quick_clean_only:
+                    new_stem = TitleCleaner.quick_clean_stem(item.stem, self.cfg.CUSTOM_STRINGS_TO_REMOVE)
+                else: 
+                    search_term = item.name
+                    info = self.classifier.classify_media(search_term, self.cfg.CUSTOM_STRINGS_TO_REMOVE, item.name)
+                    
+                    is_in_subdir = item.parent.resolve() != target_path.resolve()
+                    if info.media_type == MediaType.UNKNOWN and is_in_subdir:
+                        logging.warning(f"Filename search for '{search_term}' failed. Trying parent folder: '{item.parent.name}'")
+                        info = self.classifier.classify_media(item.parent.name, self.cfg.CUSTOM_STRINGS_TO_REMOVE, item.name)
+
+                    if info.media_type == MediaType.UNKNOWN:
+                        logging.warning(f"SKIPPED: Could not identify '{item.name}' via API, cannot generate clean name."); continue
+
+                    if info.media_type in [MediaType.MOVIE, MediaType.ANIME_MOVIE]:
+                        new_stem = info.get_folder_name()
+                    elif info.media_type in [MediaType.TV_SERIES, MediaType.ANIME_SERIES]:
+                        s = TitleCleaner.extract_season_info(item.name)
+                        e = TitleCleaner.extract_episode_info(item.name)
+                        if s and e: new_stem = f"{info.title} - S{s:02d}E{e:02d}"
+                        elif s: new_stem = f"{info.title} - S{s:02d}"
+                        else: logging.warning(f"SKIPPED: Could not extract season/episode from '{item.name}'."); continue
+                
+                sanitized_stem = re.sub(r'[<>:"/\\|?*]', '', new_stem).strip()
+                if not sanitized_stem or sanitized_stem == item.stem:
+                    logging.info(f"No changes needed for '{item.name}'."); continue
+                
+                new_path = item.parent / f"{sanitized_stem}{item.suffix}"
+                rename_plan[item] = new_path
+                logging.info(f"Plan: '{item.name}' -> '{new_path.name}'")
+                if self.progress_callback: self.progress_callback(i + 1, total_files)
+        finally:
+            self.is_processing = False
+            logging.info("--- Rename Plan Generation Finished ---")
+            if self.progress_callback: self.progress_callback(total_files, total_files)
+        return rename_plan
+
+    # --- RESTORED FUNCTION ---
+    def rename_files_in_library(self, rename_plan: Dict[Path, Path]):
+        self.is_processing = True
+        self.stop_event.clear()
+        total_files = len(rename_plan)
+        try:
+            logging.info(f"--- Applying Rename for {total_files} files ---")
+            if self.progress_callback: self.progress_callback(0, total_files)
+            if not rename_plan: logging.warning("Rename plan is empty. Nothing to do."); return
+            
+            processed_sidecars = set()
+            for i, (old_path, new_path) in enumerate(rename_plan.items()):
+                if self.stop_event.is_set(): logging.warning("Rename execution aborted."); break
+                if old_path in processed_sidecars: continue
+                
+                file_group_originals = [old_path] + self.fm._find_sidecar_files(old_path)
+                new_stem = new_path.stem
+                
+                for file_to_rename in file_group_originals:
+                    new_name = f"{new_stem}{file_to_rename.suffix}"
+                    new_target_path = file_to_rename.parent / new_name
+                    
+                    if file_to_rename.resolve() == new_target_path.resolve(): continue
+                    if new_target_path.exists():
+                        logging.warning(f"SKIPPED: A file named '{new_name}' already exists."); continue
+                    
+                    log_prefix = "DRY RUN:" if self.dry_run else "Renamed"
+                    logging.info(f"{log_prefix}: '{file_to_rename.name}' -> '{new_name}'")
+                    
+                    if not self.dry_run:
+                        try:
+                            shutil.move(str(file_to_rename), str(new_target_path))
+                        except Exception as ex:
+                            logging.error(f"ERROR renaming '{file_to_rename.name}': {ex}")
+                    
+                    if file_to_rename != old_path:
+                        processed_sidecars.add(file_to_rename)
+                        
+                if self.progress_callback: self.progress_callback(i + 1, total_files)
+        finally:
+            self.is_processing = False
+            logging.info("--- Filename Rename Finished ---")
+            if self.progress_callback: self.progress_callback(total_files, total_files)
 
     def process_source_directory(self):
         self.is_processing = True
@@ -253,9 +360,7 @@ class MediaSorter:
             self.stats = {k: 0 for k in ['processed','movies','tv','anime_movies','anime_series','split_lang_movies','unknown','errors', 'mismatched', 'anime']}
             source_dir = self.cfg.get_path('SOURCE_DIR')
             if not source_dir or not source_dir.exists() or not self.ensure_target_dirs():
-                logging.error("Source/Target dir validation failed.")
-                self.is_processing = False
-                return
+                logging.error("Source/Target dir validation failed."); self.is_processing = False; return
 
             logging.info("Starting deep scan of source directory...")
             all_files = [p for ext in self.cfg.SUPPORTED_EXTENSIONS.union(self.cfg.SIDECAR_EXTENSIONS) for p in source_dir.glob(f'**/*{ext}') if p.is_file()]
@@ -269,17 +374,13 @@ class MediaSorter:
             logging.info(f"Found {total} primary media files to process.")
 
             for i, fp in enumerate(media_files):
-                if self.stop_event.is_set():
-                    logging.warning("Sort run aborted.")
-                    break
+                if self.stop_event.is_set(): logging.warning("Sort run aborted."); break
                 self.stats['processed'] += 1
-                try:
-                    self.sort_item(fp)
+                try: self.sort_item(fp)
                 except Exception as e:
                     self.stats['errors'] += 1
                     logging.error(f"Fatal error processing '{fp.name}': {e}", exc_info=True)
-                if self.progress_callback:
-                    self.progress_callback(i + 1, total)
+                if self.progress_callback: self.progress_callback(i + 1, total)
 
             if not self.stop_event.is_set() and not self.cfg.CLEANUP_MODE_ENABLED:
                 self.cleanup_empty_dirs(source_dir)
@@ -288,16 +389,13 @@ class MediaSorter:
             self.is_processing = False
 
     def cleanup_empty_dirs(self, path: Path):
-        if self.dry_run:
-            logging.info("DRY RUN: Skipping cleanup of empty directories.")
-            return
+        if self.dry_run: logging.info("DRY RUN: Skipping cleanup of empty directories."); return
         
         logging.info("Sweeping for empty directories...")
         mpath = self._get_mismatched_path()
         for dirpath, _, _ in os.walk(path, topdown=False):
             dp = Path(dirpath).resolve()
-            if dp == path.resolve() or (mpath and dp == mpath.resolve()):
-                continue
+            if dp == path.resolve() or (mpath and dp == mpath.resolve()): continue
             try:
                 if not os.listdir(dirpath):
                     os.rmdir(dirpath)
@@ -310,8 +408,7 @@ class MediaSorter:
         logging.info("Watch mode started. Performing initial sort...")
         self.process_source_directory()
         if self.stop_event.is_set():
-            logging.info("Watch mode stopped during initial sort.")
-            return
+            logging.info("Watch mode stopped during initial sort."); return
         
         watcher = DirectoryWatcher(self.cfg)
         interval = self.cfg.WATCH_INTERVAL
@@ -322,8 +419,7 @@ class MediaSorter:
                 logging.info("Changes detected! Starting new sort...")
                 self.process_source_directory() 
                 if self.stop_event.is_set():
-                    logging.warning("Watch loop interrupted.")
-                    break
+                    logging.warning("Watch loop interrupted."); break
                 logging.info("Processing complete. Resuming watch.")
             else:
                 logging.info("No new files found. Continuing to watch.")
