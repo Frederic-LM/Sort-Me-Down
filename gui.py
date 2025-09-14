@@ -4,8 +4,11 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
+v6.6.6
+- ENHANCED: prioritize file name over dir
+
 v6.6.5
-- BUG FIX: review
+- BUG FIX: review/api anime
 
 v6.6.4
 - Uuse bangbang refactored
@@ -50,51 +53,6 @@ v6.2
 
 v6.1.0.1
 - Release
- 
-v6.0.8
-- BUG FIX: Corrected a race condition when using tray menu shortcuts,
-  ensuring the correct tab is always displayed instead of a blank panel.
-- ENHANCED: The "About" tab now automatically hides the main log panel,
-  providing a cleaner, dedicated view for version information.
-
-v6.0.7
-- FEATURE: Replaced the "About" dialog with a dedicated "About" tab in the
-  main interface for easier access to version history.
-- FEATURE: Updated the system tray icon menu to include direct shortcuts
-  to the "Review" and "About" tabs.
-- ENHANCED: Cleaned up the main window's bottom bar layout.
-
-v6.0.6
-- FEATURE: Added version number to the main window title and a new status bar.
-- FEATURE: Added an "About" dialog, accessible from the status bar, which
-  displays the application's version history.
-
-v6.0.5
-- ENHANCED: The autofilled name in the 'Review' tab now correctly preserves
-  the year from the filename while still removing other junk metadata. For
-  example, 'My.Movie.2024.1080p.mkv' will now suggest 'My Movie (2024)'.
-
-v6.0.4
-- BUG FIX: Fixed a crash when switching to the 'Review' tab by correcting the
-  on_tab_selected callback to properly get the current tab's name. This also
-  ensures the automatic scan-on-entry feature works correctly.
-
-v6.0.3
-- ENHANCED: Major UX improvements to the 'Review' tab:
-  - Tab now automatically scans for files upon entry.
-  - Scan button renamed to 'Rescan for Files'.
-  - File selection is now single-click and more reliable (switched to RadioButtons).
-  - Selecting a file now autofills the entry box with a cleaned title,
-    providing a much better starting point for corrections.
-
-v6.0.2
-- ENHANCED: Improved the UI in the 'Review' tab. The instruction label is
-  clearer, and selecting a file now autofills the entry box with the file's
-  name (stem) to provide a better starting point for corrections.
-
-v6.0.1
-- BUG FIX: Fixed a crash in the 'Review' tab when scanning for files, caused by
-  an unsupported 'text_align' argument in the CTkButton widget.
 
 """
 import customtkinter as ctk
