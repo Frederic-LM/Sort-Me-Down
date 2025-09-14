@@ -5,7 +5,6 @@ import re
 import threading
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
-
 from .api import MediaClassifier
 from .config import Config
 from .file_manager import DirectoryWatcher, FileManager
@@ -89,25 +88,30 @@ class MediaSorter:
             return
         
         filename_context = item.name
-        search_term = ""
-        initial_info = MediaInfo(title="", year=None, media_type=MediaType.UNKNOWN, language=None, genre=None)
+        initial_info = None
 
         if override_name:
             search_term = override_name
             initial_info = self.classifier.classify_media(override_name, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
         else:
-            is_sub = item.parent.resolve() != self.cfg.get_path('SOURCE_DIR').resolve()
-            search_term = item.parent.name if is_sub else item.name
+            # --- NEW, SMARTER LOGIC ---
+            # 1. Always prioritize the filename, as it's the most reliable source.
+            search_term = item.name
             initial_info = self.classifier.classify_media(search_term, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
-            if initial_info.media_type == MediaType.UNKNOWN and is_sub and item.name.lower() != search_term.lower():
-                logging.warning(f"Folder search for '{search_term}' failed. Trying filename: '{item.name}'")
-                fb_info = self.classifier.classify_media(item.name, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
-                if fb_info.media_type != MediaType.UNKNOWN:
-                    logging.info("Filename fallback successful.")
-                    initial_info, search_term = fb_info, item.name
+            
+            # 2. If filename fails, and it's in a sub-folder, try the folder name as a fallback.
+            is_sub = item.parent.resolve() != self.cfg.get_path('SOURCE_DIR').resolve()
+            if initial_info.media_type == MediaType.UNKNOWN and is_sub:
+                logging.warning(f"Filename search for '{search_term}' failed. Trying parent folder: '{item.parent.name}'")
+                search_term = item.parent.name
+                fallback_info = self.classifier.classify_media(search_term, self.cfg.CUSTOM_STRINGS_TO_REMOVE, filename_context)
+                if fallback_info.media_type != MediaType.UNKNOWN:
+                    logging.info("Parent folder fallback successful.")
+                    initial_info = fallback_info
                 else:
-                    logging.warning(f"Filename fallback for '{item.name}' also failed.")
-        
+                    logging.warning(f"Parent folder fallback for '{search_term}' also failed.")
+            # --- END OF NEW LOGIC ---
+
         info = self._validate_api_result(item, search_term, initial_info)
         files_to_move = [item] + self.fm._find_sidecar_files(item)
         stats = self.stats
