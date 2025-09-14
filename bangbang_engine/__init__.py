@@ -9,4 +9,4 @@ from .api import APIClient
 from .config import Config
 from .file_manager import FileManager
 from .models import MediaType, MediaInfo
-from .utils import TitleCleaner
+from .utils import TitleCleaner, setup_logging
