@@ -4,6 +4,9 @@
 SortMeDown Media Sorter - GUI (gui.py) for bang bang 
 ================================
 
+v6.6.7
+- - BUG FIX: reorganize was missing functionsleft before refactor
+
 v6.6.6
 - ENHANCED: prioritize file name over dir
 
@@ -510,10 +513,24 @@ class App(ctk.CTk):
         self.monitor_active_task()
 
     def start_folder_reorganization(self):
-        target_path = Path(self.reorganize_path_entry.get().strip())
+        library_path_str = self.reorganize_path_entry.get().strip()
+        if not library_path_str or not Path(library_path_str).is_dir():
+            messagebox.showerror("Error", "A valid Target Library path must be set.")
+            return
+        
+        library_path = Path(library_path_str)
         selected_files = self._get_selected_reorganize_files()
-        if not selected_files: messagebox.showwarning("No Files Selected", "Please select files to reorganize."); return
-        self._start_reorganize_task(lambda s, p, f: s.reorganize_folder_structure(p, file_list=f), "reorganize", (target_path, selected_files))
+        
+        if not selected_files:
+            messagebox.showwarning("No Files Selected", "Please select files to reorganize.")
+            return
+
+        task_args = (library_path, selected_files)
+        self._start_reorganize_task(
+            lambda s, p, f: s.reorganize_folder_structure(p, file_list=f), 
+            "reorganize", 
+            task_args
+        )
 
     def start_rename_preview(self):
         selected_files = self._get_selected_reorganize_files()
