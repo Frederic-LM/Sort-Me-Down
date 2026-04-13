@@ -1,11 +1,25 @@
 # -*- coding: utf-8 -*-
 # gui.py
 """
-SortMeDown Media Sorter - GUI (gui.py) for bang bang 
+SortMeDown Media Sorter - GUI (gui.py) for bang bang
 ================================
 
+v6.7.1
+- BUG FIX: JSONDecodeError crashes on malformed API responses (OMDb, TMDB, TVDB, AniList)
+- BUG FIX: AniList title field crash when API returns null
+- BUG FIX: TMDB year fallback produced invalid "{}" string
+- BUG FIX: Python 3.8 compatibility for path comparison
+- BUG FIX: Missing shutil import caused rename feature to crash
+- BUG FIX: Duplicate MediaClassifier class definition in api.py
+- BUG FIX: Duplicate _perform_safe_shutdown method
+- BUG FIX: Lock file could be orphaned on crash
+- FEATURE: Collapsing repeated "No new files found" log lines (x1 x2 x3...)
+- FEATURE: Source folder button to open source directory from Actions tab
+- FEATURE: Minimize behavior setting (Tray only / Tray & Taskbar)
+- IMPROVED: API session properly closed on exit
+
 v6.6.7
-- - BUG FIX: reorganize was missing functionsleft before refactor
+- BUG FIX: reorganize was missing functions left before refactor
 
 v6.6.6
 - ENHANCED: prioritize file name over dir
@@ -116,11 +130,15 @@ def resource_path(relative_path):
     return base_path / relative_path
 
 class GuiLoggingHandler(logging.Handler):
+    REPEAT_MARKER = "No new files found"
+
     def __init__(self, text_widget):
         super().__init__(); self.text_widget = text_widget
         self.text_widget.tag_config("INFO", foreground="white"); self.text_widget.tag_config("DRYRUN", foreground="#00FFFF")
         self.text_widget.tag_config("WARNING", foreground="orange"); self.text_widget.tag_config("ERROR", foreground="#FF5555")
         self.text_widget.tag_config("SUCCESS", foreground="#00FF7F"); self.text_widget.tag_config("FRENCH", foreground="#6495ED")
+        self._repeat_count = 0
+
     def emit(self, record):
         msg = self.format(record); tag = "INFO"
         if "🔵⚪🔴" in msg: tag = "FRENCH"
@@ -128,12 +146,23 @@ class GuiLoggingHandler(logging.Handler):
         elif "✅" in msg or "Settings saved" in msg: tag = "SUCCESS"
         elif record.levelname == "WARNING": tag = "WARNING"
         elif record.levelname in ["ERROR", "CRITICAL"]: tag = "ERROR"
+        is_repeat = self.REPEAT_MARKER in msg
+        if is_repeat:
+            self._repeat_count += 1
+        else:
+            self._repeat_count = 0
+        count = self._repeat_count
         def insert_text():
-            if self.text_widget.winfo_exists():
-                self.text_widget.configure(state="normal")
-                self.text_widget.insert(ctk.END, msg + '\n', tag)
-                self.text_widget.see(ctk.END)
-                self.text_widget.configure(state="disabled")
+            if not self.text_widget.winfo_exists(): return
+            self.text_widget.configure(state="normal")
+            if count > 1:
+                self.text_widget.delete("end-2l", "end-1l")
+                display = f"{msg}  x{count}\n"
+            else:
+                display = msg + '\n'
+            self.text_widget.insert(ctk.END, display, tag)
+            self.text_widget.see(ctk.END)
+            self.text_widget.configure(state="disabled")
         if hasattr(self.text_widget, 'after'):
             try: self.text_widget.after(0, insert_text)
             except Exception: pass
@@ -160,6 +189,7 @@ class App(ctk.CTk):
         self.dry_run_var = ctk.BooleanVar(value=False)
         self.fallback_var = ctk.StringVar(value=self.config.FALLBACK_SHOW_DESTINATION)
         self.notify_on_mismatch_var = ctk.BooleanVar(value=self.config.NOTIFY_ON_MISMATCH)
+        self.minimize_mode_var = ctk.StringVar(value="Tray only" if self.config.MINIMIZE_TO_TRAY_ONLY else "Tray & Taskbar")
         self.start_with_windows_var = ctk.BooleanVar()
         
         self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(0, weight=0); self.grid_rowconfigure(1, weight=1); self.grid_rowconfigure(2, weight=0)
@@ -224,7 +254,9 @@ class App(ctk.CTk):
         self.dry_run_checkbox = ctk.CTkCheckBox(of, text="Dry Run", variable=self.dry_run_var); self.dry_run_checkbox.grid(row=0, column=0, padx=5, pady=5, sticky="w")
         wif = ctk.CTkFrame(of, fg_color="transparent"); wif.grid(row=0, column=1, padx=5, pady=5, sticky="e")
         ctk.CTkLabel(wif, text="Check every").pack(side="left", padx=(0,5)); self.watch_interval_entry = ctk.CTkEntry(wif, width=40); self.watch_interval_entry.pack(side="left"); self.watch_interval_entry.insert(0, str(self.config.WATCH_INTERVAL // 60)); ctk.CTkLabel(wif, text="minutes").pack(side="left", padx=(5,0))
-        self.toggle_log_button = ctk.CTkButton(of, text="Hide Log", width=100, command=self.toggle_log_visibility); self.toggle_log_button.grid(row=1, column=1, sticky="e", padx=5, pady=5)
+        btn_row = ctk.CTkFrame(of, fg_color="transparent"); btn_row.grid(row=1, column=1, sticky="e", padx=5, pady=5)
+        self.toggle_log_button = ctk.CTkButton(btn_row, text="Hide Log", width=100, command=self.toggle_log_visibility); self.toggle_log_button.pack(side="left", padx=(0, 5))
+        ctk.CTkButton(btn_row, text="Source", width=80, command=self.open_temp_folder).pack(side="left")
         ctk.CTkFrame(parent, height=2, fg_color="gray25").grid(row=3, column=0, pady=(10, 5), sticky="ew")
         tf = ctk.CTkFrame(parent, fg_color="transparent"); tf.grid(row=4, column=0, sticky="ew", pady=(0, 5)); tf.grid_columnconfigure((0, 1, 2, 3), weight=1)
         self.toggles_map = {}; am = {'Movies': 'MOVIES_ENABLED', 'TV Shows': 'TV_SHOWS_ENABLED', 'Anime Movies': 'ANIME_MOVIES_ENABLED', 'Anime': 'ANIME_SERIES_ENABLED'}
@@ -309,6 +341,10 @@ class App(ctk.CTk):
         if self.config.TVDB_PIN: self.tvdb_pin_entry.insert(0, self.config.TVDB_PIN);
         row += 1
         
+        ctk.CTkLabel(parent, text="Minimize Behavior").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        ctk.CTkSegmentedButton(parent, values=["Tray only", "Tray & Taskbar"], variable=self.minimize_mode_var).grid(row=row, column=1, columnspan=2, padx=5, pady=5, sticky="w")
+        row += 1
+
         app_options_frame = ctk.CTkFrame(parent, fg_color="transparent")
         app_options_frame.grid(row=row, column=1, columnspan=2, padx=5, pady=10, sticky="ew")
         startup_checkbox = ctk.CTkCheckBox(app_options_frame, text="Run at Login (and start Watchdog)", variable=self.start_with_windows_var)
@@ -428,6 +464,15 @@ class App(ctk.CTk):
             self.toggle_log_button.configure(text="Hide Log")
         else: self.log_textbox.grid_remove(); self.toggle_log_button.configure(text="Show Log")
 
+    def open_temp_folder(self):
+        src = self.config.get_path('SOURCE_DIR')
+        if not src or not src.exists():
+            messagebox.showwarning("Source Not Set", "Source directory is not configured or does not exist.")
+            return
+        if sys.platform == "win32": os.startfile(src)
+        elif sys.platform == "darwin": subprocess.Popen(["open", str(src)])
+        else: subprocess.Popen(["xdg-open", str(src)])
+
     def on_media_type_toggled(self): self.update_fallback_ui_state()
     def update_fallback_ui_state(self):
         tv_on = self.enabled_vars['TV_SHOWS_ENABLED'].get()
@@ -473,6 +518,7 @@ class App(ctk.CTk):
         self.config.TVDB_API_KEY = self.tvdb_api_key_entry.get()
         self.config.TVDB_PIN = self.tvdb_pin_entry.get()
         self.config.NOTIFY_ON_MISMATCH = self.notify_on_mismatch_var.get()
+        self.config.MINIMIZE_TO_TRAY_ONLY = self.minimize_mode_var.get() == "Tray only"
         self.config.LANGUAGES_TO_SPLIT = [l.strip().lower() for l in self.split_languages_entry.get().split(',') if l.strip()]
         self.config.SIDECAR_EXTENSIONS = {f".{e.strip().lstrip('.')}" for e in self.sidecar_entry.get().split(',') if e.strip()}
         self.config.CUSTOM_STRINGS_TO_REMOVE = {s.strip().upper() for s in self.custom_strings_entry.get().split(',') if s.strip()}
@@ -651,7 +697,9 @@ class App(ctk.CTk):
             else: logging.info("✅ Task finished.")
             self.watch_button.configure(text="Launch Watchdog", state="normal")
             self.stop_button.configure(state="disabled", text="", fg_color="gray25")
-            self.progress_frame.grid_remove(); self.sorter_instance = None; self.sorter_thread = None; self.is_watching = False
+            self.progress_frame.grid_remove()
+            if self.sorter_instance: self.sorter_instance.close()
+            self.sorter_instance = None; self.sorter_thread = None; self.is_watching = False
             if self.tray_icon: self.tray_icon.update_menu()
 
     def create_tray_image(self):
@@ -674,11 +722,6 @@ class App(ctk.CTk):
         self.save_settings()
         self.destroy()
 
-    def _perform_safe_shutdown(self):
-
-        self.save_settings()
-        self.destroy()
-        
     def _perform_safe_shutdown(self): self.save_settings(); self.destroy()
     def _show_and_focus_tab(self, tab_name: str): self.deiconify(); self.lift(); self.attributes('-topmost', True); self.tab_view.set(tab_name); self.after(100, lambda: self.attributes('-topmost', False))
     def show_window(self): self._show_and_focus_tab("Actions")
@@ -688,7 +731,8 @@ class App(ctk.CTk):
     def show_about(self): self._show_and_focus_tab("About")
     def hide_to_tray(self): self.withdraw(); self.tray_icon.notify('App is running in the background', 'SortMeDown')
     def on_minimize(self, event=None):
-        if self.state() == 'iconic': self.hide_to_tray()
+        if self.state() == 'iconic' and self.config.MINIMIZE_TO_TRAY_ONLY:
+            self.hide_to_tray()
     def set_interval(self, minutes: int): self.watch_interval_entry.delete(0, ctk.END); self.watch_interval_entry.insert(0, str(minutes)); self.save_settings() 
 
     def _check_startup_status(self):
@@ -794,5 +838,8 @@ if __name__ == "__main__":
         app.mainloop()
 
     finally:
-        if lock_file_path.exists():
-            lock_file_path.unlink()
+        try:
+            if lock_file_path.exists():
+                lock_file_path.unlink()
+        except OSError:
+            pass
