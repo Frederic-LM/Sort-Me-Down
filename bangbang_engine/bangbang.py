@@ -2,6 +2,7 @@
 import logging
 import os
 import re
+import shutil
 import threading
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
@@ -22,6 +23,9 @@ class MediaSorter:
         self.stats = {}
         self.stop_event = threading.Event()
         self.is_processing = False
+
+    def close(self):
+        self.classifier.api_client.close()
 
     def signal_stop(self):
         self.stop_event.set()
@@ -366,7 +370,8 @@ class MediaSorter:
             all_files = [p for ext in self.cfg.SUPPORTED_EXTENSIONS.union(self.cfg.SIDECAR_EXTENSIONS) for p in source_dir.glob(f'**/*{ext}') if p.is_file()]
             mpath = self._get_mismatched_path()
             if mpath and mpath.exists():
-                all_files = [f for f in all_files if not f.resolve().is_relative_to(mpath.resolve())]
+                mpath_str = str(mpath.resolve())
+                all_files = [f for f in all_files if not str(f.resolve()).startswith(mpath_str)]
             
             media_files = [f for f in all_files if f.suffix.lower() in self.cfg.SUPPORTED_EXTENSIONS]
             total = len(media_files)
