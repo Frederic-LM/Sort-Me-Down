@@ -18,6 +18,7 @@ class Config:
         self.LANGUAGES_TO_SPLIT, self.SPLIT_MOVIES_DIR = [], ""
         self.MOVIES_ENABLED, self.TV_SHOWS_ENABLED, self.ANIME_MOVIES_ENABLED, self.ANIME_SERIES_ENABLED, self.CLEANUP_MODE_ENABLED = True, True, True, True, False
         self.NOTIFY_ON_MISMATCH = False
+        self.MINIMIZE_TO_TRAY_ONLY = True
 
     def get_path(self, key: str) -> Optional[Path]:
         p = getattr(self, key)
