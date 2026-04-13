@@ -38,10 +38,13 @@ class APIClient:
                 else:
                     logging.error(f"TVDB auth failed: {data.get('message', 'Unknown error')}")
                     return None
-            except requests.RequestException as e:
+            except (requests.RequestException, ValueError) as e:
                 logging.error(f"TVDB authentication failed: {e}")
                 return None
     
+    def close(self):
+        self.session.close()
+
     def test_omdb_api_key(self, api_key: str) -> Tuple[bool, str]:
         if not api_key or api_key == "yourkey": return False, "API key is empty or is the default key."
         params = {"i": "tt0848228", "apikey": api_key}
@@ -105,7 +108,7 @@ class APIClient:
                 id_params = {"i": d["Search"][0]["imdbID"], "apikey": self.config.OMDB_API_KEY}
                 id_r = self.session.get(self.config.OMDB_URL, params=id_params, timeout=10)
                 return id_r.json()
-        except requests.RequestException as e:
+        except (requests.RequestException, ValueError) as e:
             logging.error(f"OMDb API request failed for '{title}': {e}")
         return None
 
@@ -134,7 +137,7 @@ class APIClient:
             dr = self.session.get(f"{self.config.TMDB_URL}/{mt}/{mid}", params=dp, timeout=10)
             dr.raise_for_status()
             return dr.json()
-        except requests.RequestException as e:
+        except (requests.RequestException, ValueError) as e:
             logging.error(f"TMDB API request failed for '{title}': {e}")
         return None
 
@@ -193,7 +196,7 @@ class APIClient:
                             logging.info(f"TVDB SUCCESS: Found definitive record for '{best_match.get('name')}'")
                             return detail_data.get("data") 
 
-            except requests.RequestException as e:
+            except (requests.RequestException, ValueError) as e:
                 logging.error(f"TVDB network error for type '{search_type}': {e}")
                 continue
         
@@ -205,61 +208,19 @@ class APIClient:
         try:
             r = self.session.post(self.config.ANILIST_URL, json={"query": q, "variables": {"search": title}}, timeout=10)
             r.raise_for_status()
-            m = r.json().get("data", {}).get("Media")
+            data = r.json()
+            m = data.get("data", {}).get("Media")
             if m:
                 logging.info(f"AniList found match for: {title}")
                 return m
-        except requests.RequestException as e:
+            errors = data.get("errors")
+            if errors:
+                logging.warning(f"AniList returned no match for '{title}': {errors[0].get('message', 'unknown error')}")
+            else:
+                logging.info(f"AniList: no result for '{title}'")
+        except (requests.RequestException, ValueError) as e:
             logging.error(f"AniList API request failed for '{title}': {e}")
         return None
-
-class MediaClassifier:
-    def __init__(self, config: Config):
-        self.api_client = APIClient(config)
-
-    def _detect_content_hints(self, filename: str, clean_name: str) -> Dict[str, bool]:
-        hints = {'likely_anime': False, 'likely_series': False, 'likely_movie': False}
-        anime_keywords = ['subbed', 'dubbed', 'vostfr', 'anime']
-        # BUG FIX: Removed generic '[.*]' pattern which was too aggressive.
-        anime_patterns = [r'\b(OVA|ONA|BD|BDRip)\b'] 
-        
-        hints['likely_anime'] = any(keyword in filename.lower() for keyword in anime_keywords) or \
-                              any(re.search(pattern, filename, re.IGNORECASE) for pattern in anime_patterns)
-        
-        has_episode_info = TitleCleaner.extract_episode_info(filename) is not None
-        has_season_info = TitleCleaner.extract_season_info(filename) is not None
-        hints['likely_series'] = has_episode_info or has_season_info
-        
-        movie_keywords = ['1080p', '720p', '4k', 'bluray', 'webrip', 'dvdrip']
-        hints['likely_movie'] = not hints['likely_series'] and any(keyword in filename.lower() for keyword in movie_keywords)
-        return hints
-
-    def _get_optimal_provider_order(self, content_hints: Dict[str, bool], config: Config) -> List[str]:
-        available_providers = []
-        if config.OMDB_API_KEY and config.OMDB_API_KEY != "yourkey": available_providers.append('omdb')
-        if config.TMDB_API_KEY and config.TMDB_API_KEY != "yourkey": available_providers.append('tmdb')
-        if config.TVDB_API_KEY and config.TVDB_API_KEY != "yourkey": available_providers.append('tvdb')
-        if not available_providers: return []
-        
-        primary = config.API_PROVIDER
-        provider_order = [primary] if primary in available_providers else []
-        remaining = [p for p in available_providers if p != primary]
-        
-        priority_map = {
-            'likely_anime': ['tmdb', 'tvdb', 'omdb'],
-            'likely_series': ['tvdb', 'tmdb', 'omdb'],
-            'likely_movie': ['tmdb', 'omdb', 'tvdb']
-        }
-        
-        content_type = next((ctype for ctype, is_present in content_hints.items() if is_present), None)
-        if content_type:
-            for provider in priority_map[content_type]:
-                if provider in remaining:
-                    provider_order.append(provider)
-                    remaining.remove(provider)
-        
-        provider_order.extend(remaining)
-        return provider_order
 
 class MediaClassifier:
     def __init__(self, config: Config):
@@ -376,7 +337,8 @@ class MediaClassifier:
     def _classify_from_anilist(self, d: Dict[str, Any]) -> MediaInfo:
         ft = d.get("format", "").upper()
         mt = MediaType.ANIME_MOVIE if ft == "MOVIE" else MediaType.ANIME_SERIES if ft in ["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"] else MediaType.UNKNOWN
-        t = d.get('title', {}).get('english') or d.get('title', {}).get('romaji')
+        title_block = d.get('title') or {}
+        t = title_block.get('english') or title_block.get('romaji')
         return MediaInfo(title=t, year=str(d.get("seasonYear", "")), media_type=mt, language="Japanese", genre=", ".join(d.get("genres", [])))
 
     def _classify_from_omdb(self, d: Dict[str, Any]) -> MediaInfo:
@@ -394,7 +356,7 @@ class MediaClassifier:
         is_m = "title" in d
         mt = MediaType.MOVIE if is_m else MediaType.TV_SERIES
         t = d.get("title") if is_m else d.get("name")
-        y = (d.get("release_date") or d.get("first_air_date") or "{}").split('-')[0]
+        y = (d.get("release_date") or d.get("first_air_date") or "").split('-')[0]
         genres = [g.get("name", "").lower() for g in d.get("genres", [])]
 
         if "animation" in genres:
